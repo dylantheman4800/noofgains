@@ -190,17 +190,37 @@
         </div>`;
       if (it.id === 'sleep') return qRow('sleptWell', 'Sleep well last night?', `${yesterday.toLocaleDateString('en-US', { weekday: 'short' })} night · ${shortDate(yesterday)}`);
       if (it.id === 'food') return qRow('ateHealthy', 'Eat healthy today?', `Today · ${shortDate(now)}`);
-      if (it.id === 'steps') return qRow('hitSteps', '~8k steps today?', 'Biggest non-gym lever on a cut');
+      if (it.id === 'steps') return `
+        <div class="plan-item">
+          <span class="pi-dot"></span>
+          <div class="pi-body"><div class="pi-label">~8k steps today?</div><div class="pi-sub"><button class="cu-link" data-steps-expand>enter count</button> · biggest non-gym lever</div></div>
+          <span class="yn pi-yn">
+            <button class="pressable" data-ci="hitSteps" data-val="1">Yes</button>
+            <button class="pressable" data-ci="hitSteps" data-val="0">No</button>
+          </span>
+        </div>
+        <div class="pi-expand" id="steps-expand">
+          <div class="weigh-row">
+            <div class="stepper">
+              <button class="pressable" data-sstep="-500">−</button>
+              <input class="val" id="s-val" type="text" inputmode="numeric" value="8000">
+              <button class="pressable" data-sstep="500">+</button>
+            </div>
+            <span class="unit-tag">steps</span>
+          </div>
+          <button class="btn-ghost pressable mt12" style="width:100%" id="s-save">Save count</button>
+        </div>`;
       return '';
     }).join('');
 
     const loggedToday = s.bodyweight.find((b) => b.date === today);
+    const cToday = Store.checkinOn(today) || {};
     const caughtUp = `
       <div class="caught-up">
         <div class="cu-check"><svg viewBox="0 0 24 24" fill="none" stroke="var(--volt)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 10 18.5 20 6"/></svg></div>
         <div>
           <div class="cu-title">All caught up</div>
-          <div class="cu-sub">${loggedToday ? `<button class="cu-link" data-edit-weight>Weight ${loggedToday.weight.toFixed(1)} lb</button> · ` : ''}<button class="cu-link" data-edit-today>Edit today</button></div>
+          <div class="cu-sub">${loggedToday ? `<button class="cu-link" data-edit-weight>Weight ${loggedToday.weight.toFixed(1)} lb</button> · ` : ''}${cToday.steps != null ? `${cToday.steps.toLocaleString()} steps · ` : ''}<button class="cu-link" data-edit-today>Edit today</button></div>
         </div>
       </div>`;
 
@@ -241,10 +261,29 @@
     $$('#today-cards [data-ci]').forEach((b) => b.addEventListener('click', () => {
       const field = b.dataset.ci, v = b.dataset.val === '1';
       Store.setCheckin(today, field, v);
+      if (field === 'hitSteps') Store.setCheckin(today, 'steps', null); // plain yes/no overrides any count
       buzz(12);
       render();
       toast(v ? 'Yes — noted' : 'No — noted', () => Store.setCheckin(today, field, null));
     }));
+    const sTog = $('#today-cards [data-steps-expand]');
+    if (sTog) sTog.addEventListener('click', () => { $('#steps-expand').classList.toggle('open'); buzz(6); });
+    const sval = $('#s-val');
+    if (sval) {
+      $$('#today-cards [data-sstep]').forEach((b) => b.addEventListener('click', () => {
+        sval.value = String(Math.max(0, (parseInt(sval.value, 10) || 8000) + parseInt(b.dataset.sstep, 10)));
+        buzz(6);
+      }));
+      $('#s-save').addEventListener('click', () => {
+        const n = parseInt(String(sval.value).replace(/[^\d]/g, ''), 10);
+        if (!isFinite(n) || n < 0 || n > 200000) { toast('That’s not a step count, Noof'); return; }
+        Store.setCheckin(today, 'steps', n);
+        Store.setCheckin(today, 'hitSteps', n >= Plan.stepsTarget);
+        buzz(14);
+        render();
+        toast(`${n.toLocaleString()} steps — ${n >= Plan.stepsTarget ? 'target hit' : 'under target'}`, () => { Store.setCheckin(today, 'steps', null); Store.setCheckin(today, 'hitSteps', null); });
+      });
+    }
     const wval = $('#w-val');
     if (wval) {
       $$('#today-cards [data-step]').forEach((b) => b.addEventListener('click', () => {
@@ -428,6 +467,7 @@
       ${ciRow('sleptWell', 'Slept well')}
       ${ciRow('ateHealthy', 'Ate healthy')}
       ${ciRow('hitSteps', '~8k steps')}
+      <div class="set-li"><span>Steps count <span class="sub" style="display:inline">(optional)</span></span><input type="number" inputmode="numeric" id="ds-steps" value="${c.steps != null ? c.steps : ''}" placeholder="—"></div>
       <button class="btn-volt pressable mt16" data-close-sheet>Done</button>
     `);
 
@@ -437,9 +477,23 @@
       const field = b.dataset.sci, v = b.dataset.v === '1';
       const cur = (Store.checkinOn(date) || {})[field];
       Store.setCheckin(date, field, cur === v ? null : v); // tap again to clear
+      if (field === 'hitSteps') Store.setCheckin(date, 'steps', null); // plain yes/no overrides any count
       openDaySheet(date); render();
     }));
-    $('#sheet [data-close-sheet]').addEventListener('click', () => { closeSheet(); render(); });
+    $('#sheet [data-close-sheet]').addEventListener('click', () => {
+      const raw = $('#ds-steps').value.trim();
+      const stored = (Store.checkinOn(date) || {}).steps;
+      if (raw === '' && stored != null) {
+        Store.setCheckin(date, 'steps', null); // count removed; the yes/no stands
+      } else if (raw !== '') {
+        const n = parseInt(raw, 10);
+        if (isFinite(n) && n >= 0 && n <= 200000 && n !== stored) {
+          Store.setCheckin(date, 'steps', n);
+          Store.setCheckin(date, 'hitSteps', n >= Plan.stepsTarget);
+        }
+      }
+      closeSheet(); render();
+    });
   }
 
   /* ================= TRENDS ================= */

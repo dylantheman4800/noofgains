@@ -22,6 +22,7 @@ const Plan = (() => {
   const KCAL_STEP = 100;
   const KCAL_ADJ_MAX = 300;
   const HIT_TOL = 0.2; // lb of slack on a weekly checkpoint
+  const STEPS_TARGET = 8000; // NEAT sweet spot — returns flatten past 8k
   const dayMs = 86400000;
 
   const s2d = (s) => new Date(s + 'T12:00:00');
@@ -275,5 +276,6 @@ const Plan = (() => {
     goal, setGoal, clearGoal, modeOk, latestBf, targetWeight, rateFor, weeklyRateLb,
     expectedAvg, milestones, adherence, kcalAdjustment, weekReview, pace,
     todayItems, fmtD,
+    stepsTarget: STEPS_TARGET,
   };
 })();
