@@ -269,13 +269,33 @@ const Plan = (() => {
     if (c.sleptWell == null) items.push({ id: 'sleep', field: 'sleptWell' });
     if (c.ateHealthy == null) items.push({ id: 'food', field: 'ateHealthy' });
     if (Store.currentMode(date) === 'cut' && c.hitSteps == null) items.push({ id: 'steps', field: 'hitSteps' });
+    if (photoDue(date)) items.push({ id: 'photo' });
     return items;
+  }
+
+  /* ---------- photo check-in cadence ----------
+     Every 2 weeks, Monday-anchored — comparisons need real visible change
+     (2–4 wk consensus; weekly photos mostly show water + lighting). The item
+     stays up all photo week until done or skipped; either way it returns
+     next cycle. */
+  const PHOTO_EPOCH = '2026-01-05'; // a Monday — fixes which weeks are photo weeks
+
+  function isPhotoWeek(date = Store.todayStr()) {
+    const start = Store.weekBounds(s2d(date)).start;
+    return Math.floor(daysBetween(PHOTO_EPOCH, start) / 7) % 2 === 0;
+  }
+
+  function photoDue(date = Store.todayStr()) {
+    if (!isPhotoWeek(date)) return false;
+    const { start, end } = Store.weekBounds(s2d(date));
+    const p = Store.get().photos || { checkins: [], skips: [] };
+    return !p.checkins.some((c) => c.date >= start && c.date <= end) && !p.skips.includes(start);
   }
 
   return {
     goal, setGoal, clearGoal, modeOk, latestBf, targetWeight, rateFor, weeklyRateLb,
     expectedAvg, milestones, adherence, kcalAdjustment, weekReview, pace,
-    todayItems, fmtD,
+    todayItems, fmtD, isPhotoWeek, photoDue,
     stepsTarget: STEPS_TARGET,
   };
 })();

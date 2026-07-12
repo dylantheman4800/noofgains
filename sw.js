@@ -1,5 +1,5 @@
 /* NoofGains service worker — cache-first app shell, versioned. */
-const CACHE = 'noofgains-v7';
+const CACHE = 'noofgains-v8';
 const ASSETS = [
   './',
   'index.html',
@@ -10,6 +10,7 @@ const ASSETS = [
   'js/plan.js',
   'js/coach.js',
   'js/sync.js',
+  'js/photos.js',
   'js/app.js',
   'manifest.webmanifest',
   'fonts/InterVariable.woff2',

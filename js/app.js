@@ -188,6 +188,12 @@
           <span class="pi-dot"></span>
           <div class="pi-body"><div class="pi-label">Train — ${esc(nextType.name)}</div><div class="pi-sub">${it.remaining} to go, ${it.daysLeft} day${it.daysLeft === 1 ? '' : 's'} left — today counts</div></div>
         </div>`;
+      if (it.id === 'photo') return `
+        <div class="plan-item">
+          <span class="pi-dot"></span>
+          <div class="pi-body"><div class="pi-label">Photo check-in</div><div class="pi-sub">3 shots, 60 sec, encrypted · <button class="cu-link" data-photo-skip>skip this round</button></div></div>
+          <button class="btn-ghost small pressable" data-photo-start>Camera</button>
+        </div>`;
       if (it.id === 'sleep') return qRow('sleptWell', 'Sleep well last night?', `${yesterday.toLocaleDateString('en-US', { weekday: 'short' })} night · ${shortDate(yesterday)}`);
       if (it.id === 'food') return qRow('ateHealthy', 'Eat healthy today?', `Today · ${shortDate(now)}`);
       if (it.id === 'steps') return `
@@ -311,6 +317,16 @@
     if (editT) editT.addEventListener('click', () => openDaySheet(today));
     const editW = $('#today-cards [data-edit-weight]');
     if (editW) editW.addEventListener('click', () => openWeightSheet(today));
+    const phStart = $('#today-cards [data-photo-start]');
+    if (phStart) phStart.addEventListener('click', () => { buzz(8); Photos.openCheckin(() => render()); });
+    const phSkip = $('#today-cards [data-photo-skip]');
+    if (phSkip) phSkip.addEventListener('click', () => {
+      const start = Store.weekBounds().start;
+      Photos.skipWeek(today);
+      buzz(8);
+      render();
+      toast('Skipped — back in 2 weeks', () => Store.update((st) => { st.photos.skips = st.photos.skips.filter((x) => x !== start); }));
+    });
   };
 
   /* ================= FUEL ================= */
@@ -603,6 +619,7 @@
         <div class="card-label">Body fat %</div>
         <div id="chart-bf"></div>
       </div>
+      <div class="card" id="photos-card"></div>
       <div class="card"><div class="card-label">Signals</div>${insights}</div>
       <div class="card"><div class="card-label">Coach · Claude</div>${coachBody}</div>
       <div class="card"><div class="card-label">Recent entries — tap a day to edit</div>${entries || '<p class="muted">No entries yet.</p>'}</div>`;
@@ -625,6 +642,7 @@
     }
 
     /* wire */
+    Photos.renderGallery($('#photos-card'), render);
     $$('#trends-body [data-goal-open]').forEach((b) => b.addEventListener('click', () => openGoalSheet()));
     const gEnd = $('#trends-body [data-goal-end]');
     if (gEnd) gEnd.addEventListener('click', () => { Plan.clearGoal(); buzz(10); render(); toast('Plan ended'); });
@@ -826,6 +844,7 @@
       </div>
       <div class="card">
         <div class="card-label">Backup</div>
+        <p class="muted" style="margin-bottom:10px">One file: your log data plus progress photos. Photos stay encrypted in the file — same PIN opens them after a restore.</p>
         <div class="pill-row" style="margin-top:0">
           <button class="btn-ghost pressable" id="do-export">Export</button>
           <button class="btn-ghost pressable" id="do-import">Import</button>
@@ -888,7 +907,11 @@
       toast('Key saved on-device');
     });
     $('#do-export').addEventListener('click', async () => {
-      const json = Store.exportJSON();
+      // Photos ride along still-encrypted — the backup is only as open as the PIN.
+      const vault = await Photos.exportVault().catch(() => null);
+      const json = vault
+        ? JSON.stringify({ app: JSON.parse(Store.exportJSON()), photosVault: vault })
+        : Store.exportJSON();
       const fname = `noofgains-backup-${Store.todayStr()}.json`;
       const file = new File([json], fname, { type: 'application/json' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -906,7 +929,14 @@
       const f = e.target.files[0];
       if (!f) return;
       try {
-        Store.importJSON(await f.text());
+        const text = await f.text();
+        const parsed = JSON.parse(text);
+        if (parsed && parsed.app && parsed.photosVault) {
+          Store.importJSON(JSON.stringify(parsed.app));
+          await Photos.importVault(parsed.photosVault);
+        } else {
+          Store.importJSON(text);
+        }
         render();
         toast('Backup restored');
       } catch {

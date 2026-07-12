@@ -40,6 +40,7 @@ const Store = (() => {
       coach: { lastInsight: null, dismissedFlagOn: null },
       plan: { goal: null },                           // goal: { type:'weight'|'bf', target, startDate, startWeight, startBf, mode }
       fuel: { swaps: {}, slotChoice: {} },            // swaps: { 'date|slotId': n }, slotChoice: { date: 'am'|'pm'|'off' }
+      photos: { checkins: [], skips: [] },            // checkins: { date, poses, verdict? } — metadata only; images live encrypted in IndexedDB
     };
   }
 

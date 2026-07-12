@@ -129,6 +129,11 @@ const Coach = (() => {
       sessions: s.sessions.filter((x) => x.date >= cutoff).map((x) => ({ date: x.date, type: (Store.typeById(x.typeId) || {}).name })),
       bodyweight: s.bodyweight.filter((b) => b.date >= cutoff),
       checkins: s.checkins.filter((c) => c.date >= cutoff),
+      photoVerdict: (() => {
+        const pcs = (s.photos && s.photos.checkins) || [];
+        for (let i = pcs.length - 1; i >= 0; i--) if (pcs[i].verdict) return { checkinDate: pcs[i].date, text: pcs[i].verdict.text };
+        return null;
+      })(),
     };
   }
 
@@ -138,7 +143,16 @@ const Coach = (() => {
     'You get his last ~90 days as JSON: binary workout log (no sets/weights by design — do not ask for them), body weight + body fat, binary sleep/food/steps check-ins (~8k steps is the cut-day target), bulk/cut phases, and his real-life context (gyms, office food rhythm). ' +
     'If a `plan` object is present, the app already runs a deterministic goal plan (fixed weekly milestone line, auto calorie calibration) — coach WITHIN that plan; do not invent a competing one. ' +
     'Look for cross-signal patterns (bad sleep → skipped sessions → stalled weight). Respect his logistics: never suggest a weekday-morning Domino trip if sleep is the problem; Tue/Thu are his self-catered risk days. ' +
+    'If `photoVerdict` is present it is your own most recent visual read of his physique from progress photos — trust it as ground truth about how he looks and weave it in where relevant. ' +
     'Format: plain text, no markdown headers. 3 short paragraphs max: (1) what is working, (2) what is slipping — with numbers, (3) exactly one recommendation for the next 7 days.';
+
+  const PHOTO_SYSTEM =
+    'You are the coach inside NoofGains, a personal fitness app used by exactly one person: Dylan ("Noof"), 25, male. ' +
+    'He sends progress photos (relaxed front / left side / back, same framing via ghost-overlay alignment, mirrored consistently) from up to three check-ins: a baseline, the previous check-in, and today. ' +
+    'You also get his scale data (weight lb, body fat %) for those dates and his current mode (cut/bulk). ' +
+    'Compare like-to-like across dates — never rate a single photo in isolation, and never diagnose health conditions. ' +
+    'Voice: a coach who calls you out — warm but direct, no flattery, no body-shaming, facts first. ' +
+    'Format: plain text, no markdown. 3 short paragraphs max: (1) what visibly changed and where (waist, chest, delts, back — be specific), (2) does the visual agree with the scale trend — say so with the numbers, (3) exactly one focus for the next 2 weeks.';
 
   // USD per million tokens for claude-opus-4-8 ($5 in / $25 out; cache writes 1.25x, reads 0.1x)
   const PRICE = { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 };
@@ -151,7 +165,7 @@ const Coach = (() => {
       + (usage.cache_read_input_tokens || 0) * PRICE.cacheRead) / 1e6;
   }
 
-  async function analyze() {
+  async function request(system, content) {
     const key = Store.get().settings.anthropicKey;
     if (!key) throw new Error('no-key');
 
@@ -167,8 +181,8 @@ const Coach = (() => {
         model: 'claude-opus-4-8',
         max_tokens: 4000,
         thinking: { type: 'adaptive' },
-        system: SYSTEM,
-        messages: [{ role: 'user', content: 'My data:\n' + JSON.stringify(buildSummary()) + '\n\nCoach me.' }],
+        system,
+        messages: [{ role: 'user', content }],
       }),
     });
 
@@ -182,18 +196,68 @@ const Coach = (() => {
     if (data.stop_reason === 'refusal') throw new Error('Claude declined to answer — try again.');
     const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
     if (!text) throw new Error('Empty response — try again.');
+    return { text, cost: costOf(data.usage) };
+  }
 
-    const cost = costOf(data.usage);
+  function trackSpend(s, cost) {
+    const sp = s.coach.spend || (s.coach.spend = { totalUsd: 0, calls: 0, byMonth: {} });
+    sp.totalUsd += cost;
+    sp.calls += 1;
+    const mo = Store.todayStr().slice(0, 7);
+    sp.byMonth[mo] = (sp.byMonth[mo] || 0) + cost;
+  }
+
+  async function analyze() {
+    const { text, cost } = await request(SYSTEM, 'My data:\n' + JSON.stringify(buildSummary()) + '\n\nCoach me.');
     Store.update((s) => {
       s.coach.lastInsight = { date: Store.todayStr(), text, costUsd: cost };
-      const sp = s.coach.spend || (s.coach.spend = { totalUsd: 0, calls: 0, byMonth: {} });
-      sp.totalUsd += cost;
-      sp.calls += 1;
-      const mo = Store.todayStr().slice(0, 7);
-      sp.byMonth[mo] = (sp.byMonth[mo] || 0) + cost;
+      trackSpend(s, cost);
     });
     return text;
   }
 
-  return { localInsights, recoveryFlag, analyze };
+  /* Photo comparison — fires ONLY on an explicit Compare tap. Sends the
+     baseline, previous, and given check-in's shots (decrypted just for the
+     call) + scale data for those dates. Verdict lands on the check-in. */
+  async function analyzePhotos(date) {
+    const s = Store.get();
+    const cs = (s.photos && s.photos.checkins) || [];
+    const cur = cs.find((c) => c.date === date);
+    if (!cur) throw new Error('No check-in for ' + date);
+    const older = cs.filter((c) => c.date < date);
+    const sets = [];
+    if (older.length) sets.push({ label: 'baseline', ...older[0] });
+    if (older.length > 1) sets.push({ label: 'previous check-in', ...older[older.length - 1] });
+    sets.push({ label: 'today', ...cur });
+
+    const weighNear = (d) => {
+      const hit = s.bodyweight.filter((b) => b.date <= d).slice(-1)[0];
+      return hit ? { weightLb: hit.weight, bodyFatPct: hit.bodyFat != null ? hit.bodyFat : null, weighDate: hit.date } : null;
+    };
+
+    const content = [{
+      type: 'text',
+      text: 'Progress photo comparison. Mode: ' + Store.currentMode() + '. Scale data per check-in:\n'
+        + JSON.stringify(sets.map((x) => ({ date: x.date, label: x.label, scale: weighNear(x.date) }))),
+    }];
+    for (const set of sets) {
+      content.push({ type: 'text', text: `--- ${set.label} · ${set.date} (front, left side, back) ---` });
+      for (const pose of set.poses) {
+        const b64 = await Photos.shotB64(set.date, pose);
+        if (!b64) throw new Error('Photos are locked — unlock them first');
+        content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } });
+      }
+    }
+    content.push({ type: 'text', text: 'Compare the check-ins and coach me.' });
+
+    const { text, cost } = await request(PHOTO_SYSTEM, content);
+    Store.update((st) => {
+      const c = st.photos.checkins.find((x) => x.date === date);
+      if (c) c.verdict = { date: Store.todayStr(), text, costUsd: cost };
+      trackSpend(st, cost);
+    });
+    return text;
+  }
+
+  return { localInsights, recoveryFlag, analyze, analyzePhotos };
 })();
