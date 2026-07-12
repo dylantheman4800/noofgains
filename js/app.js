@@ -198,13 +198,15 @@
     const moreBtn = $('#today-cards [data-more-types]');
     if (moreBtn) moreBtn.addEventListener('click', () => openDaySheet(today));
     const dismiss = $('#today-cards [data-dismiss-flag]');
-    if (dismiss) dismiss.addEventListener('click', () => { Store.update((st) => { st.coach.dismissedFlagOn = today; }); });
+    if (dismiss) dismiss.addEventListener('click', () => { Store.update((st) => { st.coach.dismissedFlagOn = today; }); render(); });
     $$('#today-cards [data-ci]').forEach((b) => b.addEventListener('click', () => {
       Store.setCheckin(today, b.dataset.ci, b.dataset.val === '1');
       buzz(12);
+      render();
     }));
     $$('#today-cards [data-reopen]').forEach((b) => b.addEventListener('click', () => {
       Store.setCheckin(today, b.dataset.reopen, null);
+      render();
     }));
     const wval = $('#w-val');
     $$('#today-cards [data-step]').forEach((b) => b.addEventListener('click', () => {
