@@ -439,6 +439,7 @@
     const s = Store.get();
     const sess = Store.sessionsOn(date);
     const c = Store.checkinOn(date) || {};
+    const bw = s.bodyweight.find((b) => b.date === date);
     const nice = new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
     const typeRows = s.types.map((t) => {
@@ -468,6 +469,9 @@
       ${ciRow('ateHealthy', 'Ate healthy')}
       ${ciRow('hitSteps', '~8k steps')}
       <div class="set-li"><span>Steps count <span class="sub" style="display:inline">(optional)</span></span><input type="number" inputmode="numeric" id="ds-steps" value="${c.steps != null ? c.steps : ''}" placeholder="—"></div>
+      <div class="divider"></div>
+      <div class="set-li"><span>Weight (lb)</span><input type="number" step="0.1" inputmode="decimal" id="ds-w" value="${bw ? bw.weight : ''}" placeholder="—"></div>
+      <div class="set-li"><span>Body fat %</span><input type="number" step="0.1" inputmode="decimal" id="ds-bf" value="${bw && bw.bodyFat != null ? bw.bodyFat : ''}" placeholder="—"></div>
       <button class="btn-volt pressable mt16" data-close-sheet>Done</button>
     `);
 
@@ -491,6 +495,16 @@
           Store.setCheckin(date, 'steps', n);
           Store.setCheckin(date, 'hitSteps', n >= Plan.stepsTarget);
         }
+      }
+      const wRaw = $('#ds-w').value.trim();
+      const bw0 = Store.get().bodyweight.find((b) => b.date === date);
+      if (wRaw === '') {
+        if (bw0) Store.removeBodyweight(date); // field cleared — entry goes
+      } else {
+        const w = parseFloat(wRaw);
+        const bf = parseFloat($('#ds-bf').value);
+        if (isFinite(w) && w >= 60 && w <= 500) Store.setBodyweight(date, w, isFinite(bf) ? bf : undefined);
+        else toast('That’s not a body weight, Noof');
       }
       closeSheet(); render();
     });
