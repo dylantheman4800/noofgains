@@ -126,7 +126,11 @@ const Coach = (() => {
         ? { ...Plan.goal(), targetWeightLb: Plan.targetWeight(), weeklyRateLb: Math.round(Plan.weeklyRateLb() * 100) / 100, behindLb: Math.round(Plan.pace().behindLb * 10) / 10, kcalAdjustment: Plan.kcalAdjustment() }
         : null,
       fuelTargets: typeof Fuel !== 'undefined' ? Fuel.targets() : null,
-      sessions: s.sessions.filter((x) => x.date >= cutoff).map((x) => ({ date: x.date, type: (Store.typeById(x.typeId) || {}).name })),
+      sessions: s.sessions.filter((x) => x.date >= cutoff).map((x) => ({
+        date: x.date,
+        dow: new Date(x.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' }), // precomputed — day-of-week math from dates alone is error-prone
+        type: (Store.typeById(x.typeId) || {}).name,
+      })),
       bodyweight: s.bodyweight.filter((b) => b.date >= cutoff),
       checkins: s.checkins.filter((c) => c.date >= cutoff),
       photoVerdict: (() => {
@@ -145,6 +149,14 @@ const Coach = (() => {
     'Look for cross-signal patterns (bad sleep → skipped sessions → stalled weight). Respect his logistics: never suggest a weekday-morning Domino trip if sleep is the problem; Tue/Thu are his self-catered risk days. ' +
     'If `photoVerdict` is present it is your own most recent visual read of his physique from progress photos — trust it as ground truth about how he looks and weave it in where relevant. ' +
     'Format: plain text, no markdown headers. 3 short paragraphs max: (1) what is working, (2) what is slipping — with numbers, (3) exactly one recommendation for the next 7 days.';
+
+  const CHAT_SYSTEM =
+    'You are the coach inside NoofGains, a personal fitness app used by exactly one person: Dylan ("Noof"), chatting with him directly. ' +
+    'Voice: a coach who calls you out — warm but direct, no flattery, no lectures. Short answers: 1–3 short paragraphs, plain text, no markdown. ' +
+    'Every message includes his current data snapshot (last ~90 days): binary workout log with weekday per session (spot schedule patterns like "chest Mondays, runs weekends"), body weight + body fat, binary sleep/food/steps check-ins with step counts when posted (~8k steps is the cut-day target), bulk/cut phases, his goal plan, calorie/protein targets, real-life context (gyms, office food rhythm, 345 Hudson Mon–Fri), and — when present — photoVerdict, your own most recent visual read of his physique. ' +
+    'Answer his questions grounded ONLY in that data and context; when numbers exist, use them. The app tracks binary yes/no for food and sleep by design — no meal logs, no sets/weights. If he asks about something the app doesn’t track, say so plainly instead of guessing. ' +
+    'If a `plan` object is present the app already runs a deterministic goal plan — coach within it, don’t invent a competing one. ' +
+    'Look for cross-signal patterns when relevant (bad sleep → skipped sessions → stalled weight). When giving advice, end with exactly one concrete next action.';
 
   const PHOTO_SYSTEM =
     'You are the coach inside NoofGains, a personal fitness app used by exactly one person: Dylan ("Noof"), 25, male. ' +
@@ -165,7 +177,7 @@ const Coach = (() => {
       + (usage.cache_read_input_tokens || 0) * PRICE.cacheRead) / 1e6;
   }
 
-  async function request(system, content) {
+  async function request(system, content, history) {
     const key = Store.get().settings.anthropicKey;
     if (!key) throw new Error('no-key');
 
@@ -182,7 +194,7 @@ const Coach = (() => {
         max_tokens: 4000,
         thinking: { type: 'adaptive' },
         system,
-        messages: [{ role: 'user', content }],
+        messages: [...(history || []), { role: 'user', content }],
       }),
     });
 
@@ -214,6 +226,39 @@ const Coach = (() => {
       trackSpend(s, cost);
     });
     return text;
+  }
+
+  /* Ask-anything chat — fires ONLY when Dylan sends a message. His fresh
+     data snapshot rides along in the system prompt every call, so answers
+     always come from current numbers. Claude sees the last CHAT_CONTEXT
+     thread messages; older ones stay visible in the app but age out. */
+  const CHAT_CONTEXT = 16;
+
+  const chatThread = () => Store.get().coach.chat || [];
+
+  async function chat(text) {
+    const history = chatThread()
+      .slice(-CHAT_CONTEXT)
+      .map((m) => ({ role: m.role, content: m.text }));
+    const system = CHAT_SYSTEM + '\n\nToday: ' + Store.todayStr() + '\nHis current data:\n' + JSON.stringify(buildSummary());
+    Store.update((s) => {
+      (s.coach.chat || (s.coach.chat = [])).push({ role: 'user', text, date: Store.todayStr() });
+    });
+    try {
+      const { text: reply, cost } = await request(system, text, history);
+      Store.update((s) => {
+        s.coach.chat.push({ role: 'assistant', text: reply, date: Store.todayStr(), costUsd: cost });
+        trackSpend(s, cost);
+      });
+      return reply;
+    } catch (e) {
+      Store.update((s) => { s.coach.chat.pop(); }); // failed send doesn't pollute the thread
+      throw e;
+    }
+  }
+
+  function clearChat() {
+    Store.update((s) => { s.coach.chat = []; });
   }
 
   /* Photo comparison — fires ONLY on an explicit Compare tap. Sends the
@@ -259,5 +304,5 @@ const Coach = (() => {
     return text;
   }
 
-  return { localInsights, recoveryFlag, analyze, analyzePhotos };
+  return { localInsights, recoveryFlag, analyze, analyzePhotos, chat, chatThread, clearChat };
 })();

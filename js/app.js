@@ -593,13 +593,6 @@
         <span class="w">${b.weight.toFixed(1)} lb${b.bodyFat != null ? ` · ${b.bodyFat}%` : ''}</span>
       </div>`).join('');
 
-    const key = s.settings.anthropicKey;
-    const li = s.coach.lastInsight;
-    const coachBody = key
-      ? `${li ? `<div class="coach-out">${esc(li.text)}</div><div class="coach-meta">Last analyzed ${li.date}${li.costUsd != null ? ` · cost $${li.costUsd.toFixed(2)}` : ''}</div>` : '<p class="muted">Your data, read by an actual intelligence.</p>'}
-         <button class="btn-volt pressable mt12" id="coach-run">Analyze my data</button>`
-      : `<p class="muted">Add your Anthropic API key in <b>More</b> to unlock the coach — tailored reads on your training, sleep, food, and weight. Costs pennies.</p>`;
-
     $('#trends-body').innerHTML = `
       ${planSec}
       <div class="mode-seg">
@@ -621,7 +614,6 @@
       </div>
       <div class="card" id="photos-card"></div>
       <div class="card"><div class="card-label">Signals</div>${insights}</div>
-      <div class="card"><div class="card-label">Coach · Claude</div>${coachBody}</div>
       <div class="card"><div class="card-label">Recent entries — tap a day to edit</div>${entries || '<p class="muted">No entries yet.</p>'}</div>`;
 
     /* charts */
@@ -656,8 +648,64 @@
     }));
     $$('#trends-body [data-range]').forEach((b) => b.addEventListener('click', () => { trendRange = parseInt(b.dataset.range, 10); render(); }));
     $$('#trends-body [data-edit-day]').forEach((row) => row.addEventListener('click', () => openWeightSheet(row.dataset.editDay)));
-    const run = $('#coach-run');
-    if (run) run.addEventListener('click', async () => {
+  };
+
+  /* ================= COACH ================= */
+
+  renderers.coach = () => {
+    const s = Store.get();
+    const key = s.settings.anthropicKey;
+
+    if (!key) {
+      $('#coach-body').innerHTML = `
+        <div class="card">
+          <div class="card-label">Coach · Claude</div>
+          <p class="muted">The coach reads your last 90 days — training (and which days you train), sleep, food, steps, weight, plan, photos — spots what's slipping, and answers your questions. It runs on your own API key, stored only on this phone. Costs pennies per question.</p>
+          <button class="btn-volt pressable mt12" id="coach-gokey">Add API key in More</button>
+        </div>`;
+      $('#coach-gokey').addEventListener('click', () => show('more'));
+      return;
+    }
+
+    const li = s.coach.lastInsight;
+    const staleDays = li ? Math.round((Date.now() - new Date(li.date + 'T12:00:00').getTime()) / 86400000) : null;
+    const thread = Coach.chatThread();
+
+    const readCard = `
+      <div class="card">
+        <div class="card-label">Weekly read</div>
+        ${li
+          ? `<div class="coach-out">${esc(li.text)}</div><div class="coach-meta">${li.date}${li.costUsd != null ? ` · $${li.costUsd.toFixed(2)}` : ''}${staleDays > 7 ? ' · getting stale' : ''}</div>`
+          : '<p class="muted">The full top-down read: what’s working, what’s slipping, one order for the week.</p>'}
+        <button class="btn-${li && staleDays <= 7 ? 'ghost' : 'volt'} pressable mt12" style="width:100%" id="coach-run">${li ? 'Run it again' : 'Run weekly read'}</button>
+      </div>`;
+
+    const bubbles = thread.map((m) => m.role === 'user'
+      ? `<div class="chat-b me">${esc(m.text)}</div>`
+      : `<div class="chat-b coach">${esc(m.text)}${m.costUsd != null ? `<div class="chat-cost">$${m.costUsd.toFixed(2)}</div>` : ''}</div>`
+    ).join('');
+
+    $('#coach-body').innerHTML = `
+      ${readCard}
+      <div class="card" style="padding-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <div class="card-label">Ask the coach</div>
+          ${thread.length ? '<button class="cu-link" id="chat-clear">clear</button>' : ''}
+        </div>
+        <div class="chat-thread" id="chat-thread">${bubbles || '<p class="muted" style="padding:6px 0 12px">“Why am I stalling?” · “What should I hit today?” · “Am I sleeping enough to cut?”</p>'}</div>
+        <div class="chat-inrow">
+          <input type="text" id="chat-in" placeholder="Ask anything about your data…" autocomplete="off">
+          <button class="btn-volt pressable" id="chat-send" style="width:52px;min-height:44px;flex-shrink:0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+      </div>`;
+
+    const scrollThread = () => { const t = $('#chat-thread'); if (t) t.scrollTop = t.scrollHeight; };
+    scrollThread();
+
+    $('#coach-run').addEventListener('click', async () => {
+      const run = $('#coach-run');
       run.innerHTML = '<span class="spin"></span> Reading your data…';
       run.disabled = true;
       try {
@@ -665,10 +713,33 @@
         render();
       } catch (e) {
         run.disabled = false;
-        run.textContent = 'Analyze my data';
+        run.textContent = li ? 'Run it again' : 'Run weekly read';
         toast(e.message === 'bad-key' ? 'API key rejected — check it in More' : 'Coach unavailable: ' + e.message);
       }
     });
+
+    const input = $('#chat-in'), send = $('#chat-send');
+    const doSend = async () => {
+      const text = input.value.trim();
+      if (!text || send.disabled) return;
+      send.disabled = true;
+      input.value = '';
+      $('#chat-thread').insertAdjacentHTML('beforeend', `<div class="chat-b me">${esc(text)}</div><div class="chat-b coach thinking"><span class="spin" style="border-color:rgba(255,255,255,.2);border-top-color:var(--ink-2)"></span></div>`);
+      scrollThread();
+      try {
+        await Coach.chat(text);
+        render();
+        $('#chat-in').focus();
+      } catch (e) {
+        render();
+        toast(e.message === 'bad-key' ? 'API key rejected — check it in More' : 'Coach unavailable: ' + e.message);
+      }
+    };
+    send.addEventListener('click', doSend);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSend(); });
+
+    const clear = $('#chat-clear');
+    if (clear) clear.addEventListener('click', () => { Coach.clearChat(); render(); toast('Chat cleared'); });
   };
 
   function openWeightSheet(date) {
