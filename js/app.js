@@ -800,6 +800,20 @@
         </div>
       </div>
       <div class="card">
+        <div class="card-label">Sync · smart reminders</div>
+        <p class="muted">Your private worker: a 9pm push only when the day still has unanswered data, and steps that log themselves.</p>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <input type="password" id="sync-token" style="flex:1" placeholder="sync token" value="${esc(s.settings.syncToken || '')}">
+          <button class="btn-ghost pressable" id="sync-save">Save</button>
+        </div>
+        ${s.settings.syncToken ? `
+        <p class="tiny mt8" id="sync-status">Checking connection…</p>
+        <div class="pill-row">
+          <button class="btn-ghost pressable" id="push-toggle" disabled>…</button>
+          <button class="btn-ghost pressable" id="push-test">Test push</button>
+        </div>` : ''}
+      </div>
+      <div class="card">
         <div class="card-label">Coach · Claude API key</div>
         <p class="muted">Get a key at console.anthropic.com → paste it here. Stored only on this phone.</p>
         <div style="display:flex;gap:8px;margin-top:10px">
@@ -825,6 +839,41 @@
       </div>`;
 
     $('#more-goal').addEventListener('click', () => openGoalSheet());
+    $('#sync-save').addEventListener('click', () => {
+      Store.update((st) => { st.settings.syncToken = $('#sync-token').value.trim(); });
+      render();
+      toast('Sync token saved');
+    });
+    if (s.settings.syncToken) {
+      const stEl = $('#sync-status'), tog = $('#push-toggle');
+      (async () => {
+        try {
+          const [, sub] = await Promise.all([Sync.status(), Sync.subscription()]);
+          stEl.textContent = `Connected · notifications ${sub ? 'on' : 'off'}`;
+          tog.textContent = sub ? 'Disable notifications' : 'Enable notifications';
+          tog.dataset.on = sub ? '1' : '';
+          tog.disabled = false;
+        } catch {
+          stEl.textContent = 'Can’t reach the worker — check the token.';
+        }
+      })();
+      tog.addEventListener('click', async () => {
+        tog.disabled = true;
+        try {
+          if (tog.dataset.on) { await Sync.disablePush(); toast('Notifications off'); }
+          else { await Sync.enablePush(); toast('Notifications on — 9pm, only when needed'); }
+        } catch (e) { toast(e.message); }
+        render();
+      });
+      $('#push-test').addEventListener('click', async () => {
+        try {
+          const r = await Sync.testPush();
+          toast(!r.push ? 'Nothing missing today — no push needed'
+            : r.result && r.result.ok ? 'Push sent — check your phone'
+            : `No delivery: ${(r.result && r.result.reason) || 'failed'}`);
+        } catch { toast('Test failed — check the token'); }
+      });
+    }
     $('#rot-skip').addEventListener('click', () => {
       Store.update((st) => { st.rotation.nextIndex = (st.rotation.nextIndex + 1) % st.rotation.order.length; });
       render();
@@ -867,5 +916,12 @@
   };
 
   /* ---------- boot ---------- */
+  Store.subscribe(() => Sync.scheduleStatePing()); // every save re-reports what's still open
   show('today');
+  Sync.scheduleStatePing();
+  const pullSteps = () => Sync.pull().then((n) => {
+    if (n != null) { render(); toast(`Steps synced from your phone: ${n.toLocaleString()}`); }
+  }).catch(() => {});
+  pullSteps();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pullSteps(); });
 })();

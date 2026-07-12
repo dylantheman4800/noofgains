@@ -1,5 +1,5 @@
 /* NoofGains service worker — cache-first app shell, versioned. */
-const CACHE = 'noofgains-v6';
+const CACHE = 'noofgains-v7';
 const ASSETS = [
   './',
   'index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
   'js/fuel.js',
   'js/plan.js',
   'js/coach.js',
+  'js/sync.js',
   'js/app.js',
   'manifest.webmanifest',
   'fonts/InterVariable.woff2',
@@ -26,6 +27,26 @@ self.addEventListener('activate', (e) => {
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
+  );
+});
+
+/* Web Push from the sync worker — 9pm-if-something's-missing nudge. */
+self.addEventListener('push', (e) => {
+  let data = {};
+  try { data = e.data.json(); } catch { data = { body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(data.title || 'NoofGains', {
+    body: data.body || 'Questions still open today.',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    tag: 'noofgains-nightly',
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true })
+      .then((cs) => (cs.length ? cs[0].focus() : clients.openWindow('./')))
   );
 });
 

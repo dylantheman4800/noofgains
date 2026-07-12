@@ -22,6 +22,7 @@ const Store = (() => {
         weeklyGoal: 5,
         lastBackupAt: null,
         anthropicKey: '',
+        syncToken: '',
         profile: { name: 'Noof', sex: 'M', heightIn: 69, birthdate: '2000-09-23' },
       },
       types: [
