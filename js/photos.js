@@ -319,6 +319,10 @@ const Photos = (() => {
     const prev = checkins().filter((c) => c.date < date).slice(-1)[0] || null;
     const captured = {}; // pose → blob
     let poseIdx = 0;
+    // Front cam = propped selfie; rear cam = shooting the mirror. Both land as
+    // mirror-view, so they compare true — but the choice sticks, because
+    // switching methods mid-history is what breaks comparisons.
+    let facing = (Store.get().photos && Store.get().photos.camFacing) || 'user';
 
     openOverlay(`
       <div class="ph-screen ph-cam">
@@ -327,6 +331,7 @@ const Photos = (() => {
         <div class="ph-guides" id="ph-guides"><i class="h1"></i><i class="h2"></i><i class="v"></i></div>
         <div class="ph-cam-top">
           <button class="ph-close pressable" data-ph-close>✕</button>
+          <button class="ph-close ph-flip pressable" id="ph-flip" aria-label="Flip camera"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4.5h-4.5"/></svg></button>
           <div class="ph-pose"><b id="ph-pose-name"></b><span id="ph-pose-step"></span></div>
         </div>
         <div class="ph-count" id="ph-count"></div>
@@ -344,17 +349,29 @@ const Photos = (() => {
       </div>`);
     $('#photos-overlay [data-ph-close]').addEventListener('click', () => { closeOverlay(); });
 
-    try {
+    const video = $('#ph-video');
+    async function startStream() {
+      stopCamera();
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: false,
       });
+      video.srcObject = stream;
+      video.classList.toggle('rear', facing === 'environment'); // rear preview stays un-flipped — you're aiming at the mirror
+    }
+    try {
+      await startStream();
     } catch {
       $('#ph-cam-bottom').innerHTML = '<div class="ph-hint">Camera blocked. Allow camera access for this site in iOS Settings → Safari, then try again.</div>';
       return;
     }
-    const video = $('#ph-video');
-    video.srcObject = stream;
+    $('#ph-flip').addEventListener('click', async () => {
+      facing = facing === 'user' ? 'environment' : 'user';
+      Store.update((s) => { s.photos.camFacing = facing; });
+      buzz(8);
+      try { await startStream(); }
+      catch { facing = facing === 'user' ? 'environment' : 'user'; Store.update((s) => { s.photos.camFacing = facing; }); await startStream().catch(() => {}); }
+    });
 
     const ghostUrls = [];
     async function paintPose() {
@@ -387,10 +404,12 @@ const Photos = (() => {
       const canvas = document.createElement('canvas');
       canvas.width = cw; canvas.height = ch;
       const ctx = canvas.getContext('2d');
-      // Mirror to match the preview — every session mirrors the same way,
-      // so comparisons stay true.
-      ctx.translate(cw, 0);
-      ctx.scale(-1, 1);
+      // Front cam mirrors to match its preview; rear cam shooting a mirror is
+      // already flipped by the mirror itself. Either way: mirror-view, comparable.
+      if (facing === 'user') {
+        ctx.translate(cw, 0);
+        ctx.scale(-1, 1);
+      }
       ctx.drawImage(video, 0, 0, cw, ch);
       return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', JPEG_Q));
     }

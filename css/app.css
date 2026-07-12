@@ -604,6 +604,8 @@ input::placeholder { color: var(--ink-3); }
   object-fit: cover;
   transform: scaleX(-1); /* mirror preview — capture mirrors to match */
 }
+#ph-video.rear { transform: none; } /* rear cam aims at the mirror — no flip */
+.ph-flip { right: 60px; }
 #ph-ghost {
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover;
