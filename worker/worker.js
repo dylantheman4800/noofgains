@@ -186,7 +186,9 @@ export default {
 
     if (req.method === 'POST' && url.pathname === '/steps') {
       const b = await req.json().catch(() => null);
-      const n = b && parseInt(b.steps, 10);
+      // Tolerant of Shortcuts quirks: capitalized key, string numbers, decimals.
+      const rawSteps = b && (b.steps != null ? b.steps : b.Steps);
+      const n = Math.round(parseFloat(rawSteps));
       if (!isFinite(n) || n < 0 || n > 200000) return json({ error: 'bad-steps' }, 400, ch);
       const date = b.date || today;
       await env.KV.put(`steps:${date}`, String(n), { expirationTtl: 7 * 86400 });
