@@ -127,22 +127,19 @@
         </div>
       </div>`;
 
-    /* check-ins */
-    const ci = (field, q, doneLabel) => {
+    /* check-ins — question always visible, current answer highlighted; tap to flip, tap again to clear */
+    const ci = (field, q, dayTag) => {
       const val = checkin[field];
-      if (val !== undefined) {
-        return `<div class="card"><div class="checkin-done pressable" data-reopen="${field}" style="cursor:pointer">
-          <span style="color:${val ? 'var(--good)' : 'var(--bad)'}">${val ? '✓' : '✕'}</span> ${doneLabel} — ${val ? 'yes' : 'no'}
-        </div></div>`;
-      }
-      return `<div class="card"><div class="checkin-q">${q}</div>
+      return `<div class="card"><div class="checkin-q">${q}<span class="checkin-day">${dayTag}</span></div>
         <div class="yn">
-          <button class="pressable" data-ci="${field}" data-val="1">Yes</button>
-          <button class="pressable" data-ci="${field}" data-val="0">No</button>
+          <button class="pressable${val === true ? ' sel-yes' : ''}" data-ci="${field}" data-val="1">Yes</button>
+          <button class="pressable${val === false ? ' sel-no' : ''}" data-ci="${field}" data-val="0">No</button>
         </div></div>`;
     };
-    const sleepCard = ci('sleptWell', 'Sleep well last night?', 'Slept well');
-    const foodCard = ci('ateHealthy', 'Eat healthy today?', 'Ate healthy');
+    const yesterday = new Date(now.getTime() - 86400000);
+    const shortDate = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const sleepCard = ci('sleptWell', 'Sleep well last night?', `${yesterday.toLocaleDateString('en-US', { weekday: 'short' })} night · ${shortDate(yesterday)}`);
+    const foodCard = ci('ateHealthy', 'Eat healthy today?', `Today · ${shortDate(now)}`);
     const checkins = `<div class="checkin-row">${morning ? sleepCard + foodCard : foodCard + sleepCard}</div>`;
 
     /* weigh-in */
@@ -200,12 +197,10 @@
     const dismiss = $('#today-cards [data-dismiss-flag]');
     if (dismiss) dismiss.addEventListener('click', () => { Store.update((st) => { st.coach.dismissedFlagOn = today; }); render(); });
     $$('#today-cards [data-ci]').forEach((b) => b.addEventListener('click', () => {
-      Store.setCheckin(today, b.dataset.ci, b.dataset.val === '1');
+      const field = b.dataset.ci, v = b.dataset.val === '1';
+      const cur = (Store.checkinOn(today) || {})[field];
+      Store.setCheckin(today, field, cur === v ? null : v); // tap again to clear
       buzz(12);
-      render();
-    }));
-    $$('#today-cards [data-reopen]').forEach((b) => b.addEventListener('click', () => {
-      Store.setCheckin(today, b.dataset.reopen, null);
       render();
     }));
     const wval = $('#w-val');
@@ -417,7 +412,7 @@
     const key = s.settings.anthropicKey;
     const li = s.coach.lastInsight;
     const coachBody = key
-      ? `${li ? `<div class="coach-out">${esc(li.text)}</div><div class="coach-meta">Last analyzed ${li.date}</div>` : '<p class="muted">Your data, read by an actual intelligence.</p>'}
+      ? `${li ? `<div class="coach-out">${esc(li.text)}</div><div class="coach-meta">Last analyzed ${li.date}${li.costUsd != null ? ` · cost $${li.costUsd.toFixed(2)}` : ''}</div>` : '<p class="muted">Your data, read by an actual intelligence.</p>'}
          <button class="btn-volt pressable mt12" id="coach-run">Analyze my data</button>`
       : `<p class="muted">Add your Anthropic API key in <b>More</b> to unlock the coach — tailored reads on your training, sleep, food, and weight. Costs pennies.</p>`;
 
@@ -539,6 +534,9 @@
           <input type="password" id="api-key" style="flex:1" placeholder="sk-ant-…" value="${esc(s.settings.anthropicKey || '')}">
           <button class="btn-ghost pressable" id="key-save">Save</button>
         </div>
+        ${s.coach.spend && s.coach.spend.calls
+          ? `<p class="tiny mt8">AI spend: <b style="color:var(--ink)">$${(s.coach.spend.byMonth[Store.todayStr().slice(0, 7)] || 0).toFixed(2)}</b> this month · $${s.coach.spend.totalUsd.toFixed(2)} all-time · ${s.coach.spend.calls} ${s.coach.spend.calls === 1 ? 'analysis' : 'analyses'}</p>`
+          : ''}
       </div>
       <div class="card">
         <div class="card-label">Backup</div>

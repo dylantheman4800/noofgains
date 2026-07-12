@@ -136,6 +136,17 @@ const Coach = (() => {
     'Look for cross-signal patterns (bad sleep → skipped sessions → stalled weight). Respect his logistics: never suggest a weekday-morning Domino trip if sleep is the problem; Tue/Thu are his self-catered risk days. ' +
     'Format: plain text, no markdown headers. 3 short paragraphs max: (1) what is working, (2) what is slipping — with numbers, (3) exactly one recommendation for the next 7 days.';
 
+  // USD per million tokens for claude-opus-4-8 ($5 in / $25 out; cache writes 1.25x, reads 0.1x)
+  const PRICE = { input: 5, output: 25, cacheWrite: 6.25, cacheRead: 0.5 };
+
+  function costOf(usage) {
+    if (!usage) return 0;
+    return ((usage.input_tokens || 0) * PRICE.input
+      + (usage.output_tokens || 0) * PRICE.output
+      + (usage.cache_creation_input_tokens || 0) * PRICE.cacheWrite
+      + (usage.cache_read_input_tokens || 0) * PRICE.cacheRead) / 1e6;
+  }
+
   async function analyze() {
     const key = Store.get().settings.anthropicKey;
     if (!key) throw new Error('no-key');
@@ -168,7 +179,15 @@ const Coach = (() => {
     const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
     if (!text) throw new Error('Empty response — try again.');
 
-    Store.update((s) => { s.coach.lastInsight = { date: Store.todayStr(), text }; });
+    const cost = costOf(data.usage);
+    Store.update((s) => {
+      s.coach.lastInsight = { date: Store.todayStr(), text, costUsd: cost };
+      const sp = s.coach.spend || (s.coach.spend = { totalUsd: 0, calls: 0, byMonth: {} });
+      sp.totalUsd += cost;
+      sp.calls += 1;
+      const mo = Store.todayStr().slice(0, 7);
+      sp.byMonth[mo] = (sp.byMonth[mo] || 0) + cost;
+    });
     return text;
   }
 

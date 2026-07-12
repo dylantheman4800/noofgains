@@ -250,6 +250,7 @@ input::placeholder { color: var(--ink-3); }
 .checkin-row { display: flex; gap: 12px; }
 .checkin-row .card { flex: 1; margin-bottom: 0; }
 .checkin-q { font-size: 14.5px; font-weight: 500; margin-bottom: 10px; }
+.checkin-day { display: block; font-size: 11.5px; font-weight: 400; color: var(--ink-3); margin-top: 2px; }
 .yn { display: flex; gap: 8px; }
 .yn button {
   flex: 1; min-height: 40px;
@@ -261,7 +262,6 @@ input::placeholder { color: var(--ink-3); }
 }
 .yn button.sel-yes { background: var(--good-dim); border-color: transparent; color: var(--good); }
 .yn button.sel-no { background: var(--bad-dim); border-color: transparent; color: var(--bad); }
-.checkin-done { display: flex; align-items: center; gap: 8px; color: var(--ink-2); font-size: 14px; min-height: 40px; }
 
 /* ---------- weigh-in ---------- */
 
