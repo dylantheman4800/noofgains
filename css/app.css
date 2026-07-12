@@ -614,12 +614,17 @@ input::placeholder { color: var(--ink-3); }
   display: none;
   z-index: 2;
 }
-.ph-guides { position: absolute; inset: 0; pointer-events: none; z-index: 2; display: none; }
-.ph-guides i { position: absolute; background: none; }
-.ph-guides .h1, .ph-guides .h2 { left: 10%; right: 10%; height: 0; border-top: 1.5px dashed rgba(204, 255, 0, 0.4); }
-.ph-guides .h1 { top: 10%; }
-.ph-guides .h2 { bottom: 6%; }
-.ph-guides .v { top: 10%; bottom: 6%; left: 50%; width: 0; border-left: 1.5px dashed rgba(204, 255, 0, 0.25); }
+.ph-sil {
+  position: absolute; inset: 0; margin: auto;
+  height: 86%; width: 100%;
+  pointer-events: none;
+  z-index: 3;
+  fill: rgba(204, 255, 0, 0.045);
+  stroke: rgba(204, 255, 0, 0.55);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px rgba(204, 255, 0, 0.25));
+}
 .ph-cam-top {
   position: relative; z-index: 5;
   padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 12px;

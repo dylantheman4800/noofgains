@@ -1,5 +1,5 @@
 /* NoofGains service worker — cache-first app shell, versioned. */
-const CACHE = 'noofgains-v9';
+const CACHE = 'noofgains-v10';
 const ASSETS = [
   './',
   'index.html',

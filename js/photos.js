@@ -11,9 +11,26 @@ const Photos = (() => {
   const POSES = ['front', 'side', 'back'];
   const POSE_LABEL = { front: 'Front', side: 'Left side', back: 'Back' };
   const POSE_HINT = {
-    front: 'Face the camera, arms relaxed at your sides',
-    side: 'Turn 90° left, arms relaxed, look straight ahead',
-    back: 'Turn away from the camera, arms relaxed',
+    front: 'Chest · arms · belly — fill the outline, arms relaxed',
+    side: 'Belly profile · posture — turn 90° left, fill the outline',
+    back: 'Back · shoulders · glutes — turn away, fill the outline',
+  };
+
+  /* Pose silhouettes (200×440) — the standardization layer: stand so you fill
+     the outline and distance, height, and angle take care of themselves.
+     Front/back share geometry (same outline from behind); side is a profile. */
+  const SIL_FRONT =
+    '<circle cx="100" cy="36" r="21"/>' +
+    '<path d="M89,60 C80,64 70,70 63,78 C67,90 70,104 70,120 C72,146 74,158 74,166 C70,180 66,192 66,206 C63,220 62,234 63,250 C66,270 70,288 70,302 C66,314 64,324 65,336 C70,356 75,376 76,392 C70,396 64,400 64,406 C70,412 80,413 87,412 C89,406 89,400 89,394 C92,376 93,358 93,342 C94,328 94,316 93,306 C95,288 96,270 96,256 C98,248 100,240 100,236 C102,240 104,248 104,256 C104,270 105,288 107,306 C106,316 106,328 107,342 C107,358 108,376 111,394 C111,400 111,406 113,412 C120,413 130,412 136,406 C136,400 130,396 124,392 C125,376 130,356 135,336 C136,324 134,314 130,302 C130,288 134,270 137,250 C138,234 137,220 134,206 C134,192 130,180 126,166 C126,158 128,146 130,120 C130,104 133,90 137,78 C130,70 120,64 111,60 C107,62 104,63 100,63 C96,63 93,62 89,60 Z"/>' +
+    '<path d="M61,80 C54,85 50,93 49,103 L46,212 C45,226 48,236 54,239 C60,241 64,234 64,224 L66,112 C66,98 66,86 61,80 Z"/>' +
+    '<path d="M139,80 C146,85 150,93 151,103 L154,212 C155,226 152,236 146,239 C140,241 136,234 136,224 L134,112 C134,98 134,86 139,80 Z"/>';
+  const SIL = {
+    front: SIL_FRONT,
+    back: SIL_FRONT,
+    side:
+      '<circle cx="96" cy="36" r="21"/>' +
+      '<path d="M100,58 C104,59 108,61 110,66 C113,74 117,86 118,100 C119,118 118,132 117,144 C114,158 111,170 111,180 C118,192 124,202 124,214 C123,228 120,238 116,248 C112,262 109,274 110,286 C113,300 115,316 115,330 C112,344 109,356 109,368 C110,382 112,394 113,402 C104,408 88,410 72,409 C70,404 72,399 76,397 C82,393 88,390 91,387 C92,370 92,352 92,336 C90,324 87,312 87,300 C84,286 82,268 82,254 C80,242 78,228 78,218 C76,208 74,198 74,190 C72,180 71,172 72,166 C73,152 74,144 74,140 C71,130 70,120 71,112 C72,102 74,94 76,90 C80,80 86,70 92,62 C94,60 97,58 100,58 Z"/>' +
+      '<path d="M99,90 C97,118 95,146 93,176 C92,196 93,214 96,230" fill="none" stroke-linecap="round"/>',
   };
   const MAX_EDGE = 1280;      // long edge px — plenty for comparison, ~250KB/shot
   const JPEG_Q = 0.82;
@@ -328,7 +345,7 @@ const Photos = (() => {
       <div class="ph-screen ph-cam">
         <video id="ph-video" autoplay playsinline muted></video>
         <img id="ph-ghost" alt="" />
-        <div class="ph-guides" id="ph-guides"><i class="h1"></i><i class="h2"></i><i class="v"></i></div>
+        <svg class="ph-sil" id="ph-sil" viewBox="0 0 200 440" preserveAspectRatio="xMidYMid meet"></svg>
         <div class="ph-cam-top">
           <button class="ph-close pressable" data-ph-close>✕</button>
           <button class="ph-close ph-flip pressable" id="ph-flip" aria-label="Flip camera"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 3v4.5h-4.5"/></svg></button>
@@ -379,10 +396,10 @@ const Photos = (() => {
       $('#ph-pose-name').textContent = POSE_LABEL[pose];
       $('#ph-pose-step').textContent = `${poseIdx + 1} of ${POSES.length}`;
       $('#ph-hint').textContent = POSE_HINT[pose];
+      $('#ph-sil').innerHTML = SIL[pose]; // the outline is the standard — every session, every pose
       const ghost = $('#ph-ghost');
       ghost.src = '';
       ghost.style.display = 'none';
-      $('#ph-guides').style.display = 'block';
       if (prev) {
         const b = await shotBlob(prev.date, pose);
         if (b) {
@@ -390,8 +407,7 @@ const Photos = (() => {
           ghostUrls.push(url);
           ghost.src = url;
           ghost.style.display = 'block';
-          $('#ph-guides').style.display = 'none';
-          $('#ph-hint').textContent = `Line yourself up with your ${Plan.fmtD(prev.date)} outline`;
+          $('#ph-hint').textContent = `${POSE_HINT[pose].split(' — ')[0]} — match your ${Plan.fmtD(prev.date)} ghost`;
         }
       }
     }
