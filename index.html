@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>NoofGains</title>
+  <meta name="description" content="One-tap training consistency" />
+  <meta name="theme-color" content="#08090a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="NoofGains" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="css/app.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ================= TODAY ================= -->
+    <section class="view" id="view-today">
+      <h1 class="view-title" id="today-greeting">Today</h1>
+      <p class="view-sub" id="today-date"></p>
+      <div id="today-cards"></div>
+    </section>
+
+    <!-- ================= FUEL ================= -->
+    <section class="view" id="view-fuel">
+      <div class="fuel-head">
+        <h1 class="view-title">Fuel</h1>
+        <span class="day-tag" id="fuel-daytag"></span>
+      </div>
+      <p class="view-sub" id="fuel-sub"></p>
+      <div id="fuel-body"></div>
+    </section>
+
+    <!-- ================= HISTORY ================= -->
+    <section class="view" id="view-history">
+      <h1 class="view-title">History</h1>
+      <p class="view-sub">Tap any day to fix or backfill.</p>
+      <div id="history-body"></div>
+    </section>
+
+    <!-- ================= TRENDS ================= -->
+    <section class="view" id="view-trends">
+      <h1 class="view-title">Trends</h1>
+      <p class="view-sub" id="trends-sub"></p>
+      <div id="trends-body"></div>
+    </section>
+
+    <!-- ================= MORE ================= -->
+    <section class="view" id="view-more">
+      <h1 class="view-title">More</h1>
+      <p class="view-sub">Setup &amp; data.</p>
+      <div id="more-body"></div>
+    </section>
+  </div>
+
+  <!-- tab bar -->
+  <nav id="tabbar">
+    <div class="tabs">
+      <button class="tab pressable" data-view="today" aria-label="Today">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 14.5 9.5 9l4 4L20 6.5"/><path d="M15 6.5h5v5"/></svg>
+        <span>Today</span>
+      </button>
+      <button class="tab pressable" data-view="fuel" aria-label="Fuel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3c3.5 3.6 6 6.8 6 10a6 6 0 0 1-12 0c0-3.2 2.5-6.4 6-10Z"/><path d="M9.5 13.5a2.5 2.5 0 0 0 2.5 2.5"/></svg>
+        <span>Fuel</span>
+      </button>
+      <button class="tab pressable" data-view="history" aria-label="History">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 9.5h16M8 3v3.5M16 3v3.5"/></svg>
+        <span>History</span>
+      </button>
+      <button class="tab pressable" data-view="trends" aria-label="Trends">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M7.5 14.5 11 10l3 3 4.5-6"/></svg>
+        <span>Trends</span>
+      </button>
+      <button class="tab pressable" data-view="more" aria-label="More">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="2.6"/><path d="M19 12a7 7 0 0 0-.14-1.4l2-1.55-2-3.46-2.35.95a7 7 0 0 0-2.42-1.4L13.7 2.6h-3.4l-.39 2.54a7 7 0 0 0-2.42 1.4l-2.35-.95-2 3.46 2 1.55A7 7 0 0 0 5 12c0 .48.05.94.14 1.4l-2 1.55 2 3.46 2.35-.95a7 7 0 0 0 2.42 1.4l.39 2.54h3.4l.39-2.54a7 7 0 0 0 2.42-1.4l2.35.95 2-3.46-2-1.55c.09-.46.14-.92.14-1.4Z"/></svg>
+        <span>More</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- bottom sheet + toast -->
+  <div id="sheet-backdrop"></div>
+  <div id="sheet"></div>
+  <div class="toast" id="toast"></div>
+
+  <script src="js/store.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/fuel.js"></script>
+  <script src="js/coach.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+    }
+  </script>
+</body>
+</html>
