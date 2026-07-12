@@ -27,7 +27,16 @@ const Fuel = (() => {
     const bmr = 10 * kg + 6.25 * cm - 5 * age(p.birthdate, date) + 5; // male
     const tdee = bmr * 1.5; // office job + ~5 sessions/wk
     const mode = Store.currentMode(date);
-    const kcal = Math.round((mode === 'cut' ? Math.max(tdee - 500, 1900) : tdee + 300) / 10) * 10;
+    let kcal = mode === 'cut' ? Math.max(tdee - 500, 1900) : tdee + 300;
+    // Plan engine's weekly calibration nudges calories ±100 at a time when
+    // the work was done but the line was missed. Hard caps always win:
+    // cut stays ≥1,900 and keeps a real deficit; bulk never dips below TDEE.
+    if (typeof Plan !== 'undefined' && Plan.goal()) {
+      kcal += Plan.kcalAdjustment(date);
+      if (mode === 'cut') kcal = Math.min(Math.max(kcal, 1900), Math.max(tdee - 300, 1900));
+      else kcal = Math.max(kcal, tdee);
+    }
+    kcal = Math.round(kcal / 10) * 10;
     const protein = Math.round(lb);            // 1 g/lb
     const fat = Math.round(lb * (mode === 'cut' ? 0.36 : 0.42));
     const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));

@@ -245,12 +245,108 @@ input::placeholder { color: var(--ink-3); }
 .ring-meta .sub { font-size: 13.5px; color: var(--ink-2); }
 .ring-meta .sub b { color: var(--ink); font-weight: 500; }
 
-/* ---------- check-ins ---------- */
+/* ---------- Today's plan (outstanding items — answered → gone) ---------- */
 
-.checkin-row { display: flex; gap: 12px; }
-.checkin-row .card { flex: 1; margin-bottom: 0; }
-.checkin-q { font-size: 14.5px; font-weight: 500; margin-bottom: 10px; }
-.checkin-day { display: block; font-size: 11.5px; font-weight: 400; color: var(--ink-3); margin-top: 2px; }
+.plan-head { display: flex; justify-content: space-between; align-items: baseline; }
+.plan-pace { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.plan-pace.ahead { color: var(--good); }
+.plan-pace.behind { color: var(--bad); }
+
+.plan-items { margin-top: 4px; }
+.plan-items > .plan-item { border-top: 1px solid var(--hairline); }
+.plan-items > .plan-item:first-child { border-top: none; }
+.plan-item {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; text-align: left;
+  padding: 13px 0;
+}
+.pi-dot {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 1.5px solid var(--hairline-strong);
+  flex-shrink: 0;
+}
+.plan-item.needed .pi-dot { border-color: var(--volt); box-shadow: 0 0 8px var(--volt-glow); }
+.pi-body { flex: 1; min-width: 0; }
+.pi-label { font-size: 15px; font-weight: 500; }
+.pi-sub { font-size: 12.5px; color: var(--ink-3); margin-top: 1px; }
+.pi-chev { color: var(--ink-3); font-size: 17px; flex-shrink: 0; width: 14px; text-align: center; }
+.pi-yn { width: 136px; flex-shrink: 0; }
+.pi-yn button { min-height: 38px; }
+.pi-expand { display: none; padding: 2px 0 14px 30px; }
+.pi-expand.open { display: block; }
+
+.caught-up { display: flex; align-items: center; gap: 12px; padding: 8px 0 4px; }
+.caught-up .cu-check {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--volt-dim);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  animation: popIn 0.42s var(--spring);
+}
+.caught-up .cu-check svg { width: 20px; height: 20px; }
+.cu-title { font-size: 16px; font-weight: 600; }
+.cu-sub { font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+.cu-link { color: var(--ink-3); font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; padding: 0; }
+
+/* ---------- plan strategic view (Trends) ---------- */
+
+.plan-big {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 30px; font-weight: 600; letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.plan-big .arr { color: var(--ink-3); font-size: 19px; font-weight: 400; }
+.plan-big small { font-size: 14px; color: var(--ink-3); font-weight: 500; letter-spacing: -0.01em; }
+.goal-track { height: 7px; border-radius: 4px; background: var(--s3); overflow: hidden; margin: 10px 0 8px; }
+.goal-track i {
+  display: block; height: 100%;
+  background: var(--volt); border-radius: 4px;
+  box-shadow: 0 0 8px var(--volt-glow);
+  transition: width 0.8s var(--ease);
+}
+.plan-stand { font-size: 13.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.plan-dates { font-size: 12.5px; color: var(--ink-3); margin-top: 10px; font-variant-numeric: tabular-nums; }
+
+.mile-strip {
+  display: flex; gap: 6px;
+  overflow-x: auto;
+  margin-top: 12px; padding: 2px 0 6px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.mile-strip::-webkit-scrollbar { display: none; }
+.mile {
+  flex: 0 0 auto; min-width: 52px;
+  text-align: center; padding: 7px 8px;
+  border-radius: 10px;
+  background: var(--s2); border: 1px solid var(--hairline);
+}
+.mile .mw { font-size: 10px; font-weight: 500; color: var(--ink-3); letter-spacing: 0.03em; }
+.mile .mv { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 1px; }
+.mile.hit { background: var(--good-dim); border-color: transparent; }
+.mile.hit .mv { color: var(--good); }
+.mile.miss { background: var(--bad-dim); border-color: transparent; }
+.mile.miss .mv { color: var(--bad); }
+.mile.cur { border-color: var(--volt); }
+.mile.cur .mw { color: var(--volt); }
+
+.rx { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-top: 1px solid var(--hairline); font-size: 14px; }
+.rx:first-of-type { border-top: none; }
+.rx .k { color: var(--ink-2); }
+.rx .v { font-weight: 600; font-variant-numeric: tabular-nums; }
+.rx .v.done { color: var(--good); }
+.rx-note {
+  margin-top: 10px; padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--s2); border: 1px solid var(--hairline);
+  font-size: 13px; color: var(--ink-2); line-height: 1.5;
+}
+.rx-note b { color: var(--ink); }
+.rx-note.cal { border-color: rgba(204, 255, 0, 0.3); }
+.goal-preview { font-size: 13px; color: var(--ink-2); margin: 12px 2px 14px; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* ---------- binary yes/no ---------- */
+
 .yn { display: flex; gap: 8px; }
 .yn button {
   flex: 1; min-height: 40px;

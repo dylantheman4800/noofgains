@@ -68,7 +68,6 @@
     const doneToday = Store.sessionsOn(today);
     const week = Store.weekStats();
     const flag = Coach.recoveryFlag();
-    const checkin = Store.checkinOn(today) || {};
     const morning = partOfDay() === 'morning';
 
     /* hero */
@@ -127,36 +126,30 @@
         </div>
       </div>`;
 
-    /* check-ins — question always visible, current answer highlighted; tap to flip, tap again to clear */
-    const ci = (field, q, dayTag) => {
-      const val = checkin[field];
-      return `<div class="card"><div class="checkin-q">${q}<span class="checkin-day">${dayTag}</span></div>
-        <div class="yn">
-          <button class="pressable${val === true ? ' sel-yes' : ''}" data-ci="${field}" data-val="1">Yes</button>
-          <button class="pressable${val === false ? ' sel-no' : ''}" data-ci="${field}" data-val="0">No</button>
-        </div></div>`;
-    };
+    /* ----- Today's plan: outstanding items only — answered → gone ----- */
+    const gl = Plan.goal();
+    const pc = gl && Plan.modeOk() ? Plan.pace() : null;
+    const items = Plan.todayItems(today);
     const yesterday = new Date(now.getTime() - 86400000);
     const shortDate = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const sleepCard = ci('sleptWell', 'Sleep well last night?', `${yesterday.toLocaleDateString('en-US', { weekday: 'short' })} night · ${shortDate(yesterday)}`);
-    const foodCard = ci('ateHealthy', 'Eat healthy today?', `Today · ${shortDate(now)}`);
-    const checkins = `<div class="checkin-row">${morning ? sleepCard + foodCard : foodCard + sleepCard}</div>`;
 
-    /* weigh-in */
     const last = Store.lastWeight();
-    const loggedToday = s.bodyweight.find((b) => b.date === today);
-    const startW = loggedToday ? loggedToday.weight : last ? last.weight : 165;
+    const startW = last ? last.weight : 165;
     const avg = Store.rolling7Avg(today);
-    const mode = Store.currentMode();
-    let deltaLine = '';
-    if (avg != null && last) {
-      const d = (loggedToday ? loggedToday.weight : last.weight) - avg;
-      const goodDir = mode === 'cut' ? d <= 0 : d >= 0;
-      const cls = goodDir ? (d <= 0 ? 'down-good' : 'up-good') : (d <= 0 ? 'down-bad' : 'up-bad');
-      deltaLine = `<div class="delta-line">vs 7-day avg (${avg.toFixed(1)}): <span class="${cls}">${d >= 0 ? '+' : ''}${d.toFixed(1)} lb</span> · ${mode === 'cut' ? 'cutting' : 'bulking'}</div>`;
-    }
-    const weigh = `<div class="card" style="margin-top:12px">
-        <div class="card-label">${loggedToday ? 'Weight — logged today' : 'Morning weigh-in'}</div>
+
+    const qRow = (field, q, dayTag) => `
+      <div class="plan-item">
+        <span class="pi-dot"></span>
+        <div class="pi-body"><div class="pi-label">${q}</div><div class="pi-sub">${dayTag}</div></div>
+        <span class="yn pi-yn">
+          <button class="pressable" data-ci="${field}" data-val="1">Yes</button>
+          <button class="pressable" data-ci="${field}" data-val="0">No</button>
+        </span>
+      </div>`;
+
+    const weighOpen = morning || items.length === 1; // sole item left: open it
+    const weighExpand = `
+      <div class="pi-expand${weighOpen ? ' open' : ''}" id="weigh-expand">
         <div class="weigh-row">
           <div class="stepper">
             <button class="pressable" data-step="-0.5">−</button>
@@ -165,21 +158,61 @@
           </div>
           <span class="unit-tag">lb</span>
         </div>
-        <button class="bf-toggle" id="bf-toggle">+ body fat %${loggedToday && loggedToday.bodyFat != null ? ` (${loggedToday.bodyFat}%)` : ''}</button>
+        <button class="bf-toggle" id="bf-toggle">+ body fat %</button>
         <div class="bf-row" id="bf-row">
           <div class="stepper">
             <button class="pressable" data-bfstep="-0.5">−</button>
-            <input class="val" id="bf-val" type="text" inputmode="decimal" value="${(loggedToday && loggedToday.bodyFat != null ? loggedToday.bodyFat : (last && last.bodyFat != null ? last.bodyFat : 18)).toFixed(1)}">
+            <input class="val" id="bf-val" type="text" inputmode="decimal" value="${(last && last.bodyFat != null ? last.bodyFat : 18).toFixed(1)}">
             <button class="pressable" data-bfstep="0.5">+</button>
           </div>
           <span class="unit-tag">%</span>
         </div>
-        <button class="btn-ghost pressable mt12" style="width:100%" id="w-save">${loggedToday ? 'Update' : 'Save'}</button>
-        ${deltaLine}
+        <button class="btn-ghost pressable mt12" style="width:100%" id="w-save">Save</button>
       </div>`;
 
-    const cards = morning ? [hero, flagCard, weigh, checkins, ring] : [hero, flagCard, ring, checkins, weigh];
-    $('#today-cards').innerHTML = cards.join('');
+    const rows = items.map((it) => {
+      if (it.id === 'goal') return `
+        <button class="plan-item pressable" data-goal-setup>
+          <span class="pi-dot"></span>
+          <div class="pi-body"><div class="pi-label">Set your goal</div><div class="pi-sub">Pick the target — I’ll build the week-by-week plan</div></div>
+          <span class="pi-chev">›</span>
+        </button>`;
+      if (it.id === 'weigh') return `
+        <button class="plan-item pressable" data-weigh-toggle>
+          <span class="pi-dot"></span>
+          <div class="pi-body"><div class="pi-label">Morning weigh-in</div><div class="pi-sub">${avg != null ? `7-day avg ${avg.toFixed(1)} lb` : 'First entry sets the baseline'}</div></div>
+          <span class="pi-chev" id="weigh-chev">${weighOpen ? '−' : '›'}</span>
+        </button>${weighExpand}`;
+      if (it.id === 'train') return `
+        <div class="plan-item needed">
+          <span class="pi-dot"></span>
+          <div class="pi-body"><div class="pi-label">Train — ${esc(nextType.name)}</div><div class="pi-sub">${it.remaining} to go, ${it.daysLeft} day${it.daysLeft === 1 ? '' : 's'} left — today counts</div></div>
+        </div>`;
+      if (it.id === 'sleep') return qRow('sleptWell', 'Sleep well last night?', `${yesterday.toLocaleDateString('en-US', { weekday: 'short' })} night · ${shortDate(yesterday)}`);
+      if (it.id === 'food') return qRow('ateHealthy', 'Eat healthy today?', `Today · ${shortDate(now)}`);
+      if (it.id === 'steps') return qRow('hitSteps', '~8k steps today?', 'Biggest non-gym lever on a cut');
+      return '';
+    }).join('');
+
+    const loggedToday = s.bodyweight.find((b) => b.date === today);
+    const caughtUp = `
+      <div class="caught-up">
+        <div class="cu-check"><svg viewBox="0 0 24 24" fill="none" stroke="var(--volt)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 10 18.5 20 6"/></svg></div>
+        <div>
+          <div class="cu-title">All caught up</div>
+          <div class="cu-sub">${loggedToday ? `<button class="cu-link" data-edit-weight>Weight ${loggedToday.weight.toFixed(1)} lb</button> · ` : ''}<button class="cu-link" data-edit-today>Edit today</button></div>
+        </div>
+      </div>`;
+
+    const paceChip = pc
+      ? `<span class="plan-pace ${pc.behindLb <= 0.05 ? 'ahead' : 'behind'}">${Math.abs(pc.behindLb) < 0.05 ? 'on plan' : `${Math.abs(pc.behindLb).toFixed(1)} lb ${pc.behindLb < 0 ? 'ahead' : 'behind'}`}</span>`
+      : '';
+    const planCard = `<div class="card">
+        <div class="plan-head"><div class="card-label" style="margin:0">Today’s plan</div>${paceChip}</div>
+        <div class="plan-items">${rows || caughtUp}</div>
+      </div>`;
+
+    $('#today-cards').innerHTML = [hero, flagCard, planCard, ring].join('');
 
     /* wire */
     $$('#today-cards [data-log]').forEach((b) => b.addEventListener('click', () => {
@@ -196,34 +229,49 @@
     if (moreBtn) moreBtn.addEventListener('click', () => openDaySheet(today));
     const dismiss = $('#today-cards [data-dismiss-flag]');
     if (dismiss) dismiss.addEventListener('click', () => { Store.update((st) => { st.coach.dismissedFlagOn = today; }); render(); });
+    const gsBtn = $('#today-cards [data-goal-setup]');
+    if (gsBtn) gsBtn.addEventListener('click', () => openGoalSheet());
+    const wtog = $('#today-cards [data-weigh-toggle]');
+    if (wtog) wtog.addEventListener('click', () => {
+      const ex = $('#weigh-expand');
+      ex.classList.toggle('open');
+      $('#weigh-chev').textContent = ex.classList.contains('open') ? '−' : '›';
+      buzz(6);
+    });
     $$('#today-cards [data-ci]').forEach((b) => b.addEventListener('click', () => {
       const field = b.dataset.ci, v = b.dataset.val === '1';
-      const cur = (Store.checkinOn(today) || {})[field];
-      Store.setCheckin(today, field, cur === v ? null : v); // tap again to clear
+      Store.setCheckin(today, field, v);
       buzz(12);
       render();
+      toast(v ? 'Yes — noted' : 'No — noted', () => Store.setCheckin(today, field, null));
     }));
     const wval = $('#w-val');
-    $$('#today-cards [data-step]').forEach((b) => b.addEventListener('click', () => {
-      wval.value = (parseFloat(wval.value || startW) + parseFloat(b.dataset.step)).toFixed(1);
-      buzz(6);
-    }));
-    const bfval = $('#bf-val');
-    $$('#today-cards [data-bfstep]').forEach((b) => b.addEventListener('click', () => {
-      bfval.value = (parseFloat(bfval.value || 18) + parseFloat(b.dataset.bfstep)).toFixed(1);
-      buzz(6);
-    }));
-    $('#bf-toggle').addEventListener('click', () => $('#bf-row').classList.toggle('open'));
-    $('#w-save').addEventListener('click', () => {
-      const w = parseFloat(wval.value);
-      if (!isFinite(w) || w < 60 || w > 500) { toast('That’s not a body weight, Noof'); return; }
-      const bfOpen = $('#bf-row').classList.contains('open');
-      const bf = bfOpen ? parseFloat(bfval.value) : (loggedToday ? loggedToday.bodyFat : undefined);
-      Store.setBodyweight(today, w, isFinite(bf) ? bf : undefined);
-      buzz(18);
-      render();
-      toast('Weight saved');
-    });
+    if (wval) {
+      $$('#today-cards [data-step]').forEach((b) => b.addEventListener('click', () => {
+        wval.value = (parseFloat(wval.value || startW) + parseFloat(b.dataset.step)).toFixed(1);
+        buzz(6);
+      }));
+      const bfval = $('#bf-val');
+      $$('#today-cards [data-bfstep]').forEach((b) => b.addEventListener('click', () => {
+        bfval.value = (parseFloat(bfval.value || 18) + parseFloat(b.dataset.bfstep)).toFixed(1);
+        buzz(6);
+      }));
+      $('#bf-toggle').addEventListener('click', () => $('#bf-row').classList.toggle('open'));
+      $('#w-save').addEventListener('click', () => {
+        const w = parseFloat(wval.value);
+        if (!isFinite(w) || w < 60 || w > 500) { toast('That’s not a body weight, Noof'); return; }
+        const bfOpen = $('#bf-row').classList.contains('open');
+        const bf = bfOpen ? parseFloat($('#bf-val').value) : undefined;
+        Store.setBodyweight(today, w, isFinite(bf) ? bf : undefined);
+        buzz(18);
+        render();
+        toast('Weight saved', () => Store.removeBodyweight(today));
+      });
+    }
+    const editT = $('#today-cards [data-edit-today]');
+    if (editT) editT.addEventListener('click', () => openDaySheet(today));
+    const editW = $('#today-cards [data-edit-weight]');
+    if (editW) editW.addEventListener('click', () => openWeightSheet(today));
   };
 
   /* ================= FUEL ================= */
@@ -379,6 +427,7 @@
       <div class="divider"></div>
       ${ciRow('sleptWell', 'Slept well')}
       ${ciRow('ateHealthy', 'Ate healthy')}
+      ${ciRow('hitSteps', '~8k steps')}
       <button class="btn-volt pressable mt16" data-close-sheet>Done</button>
     `);
 
@@ -402,6 +451,57 @@
     const mode = Store.currentMode();
     $('#trends-sub').textContent = mode === 'cut' ? 'Cutting — down and to the right.' : 'Bulking — feed the machine.';
 
+    /* ----- Plan: where you stand, the milestone line, this week's orders ----- */
+    const g = Plan.goal();
+    let planSec = '';
+    if (!g) {
+      planSec = `<div class="card">
+          <div class="card-label">Plan</div>
+          <p class="muted">Give me the target and I’ll lay out the weekly milestones — and exactly what to do each day to hit them.</p>
+          <button class="btn-volt pressable mt12" data-goal-open>Set your goal</button>
+        </div>`;
+    } else if (!Plan.modeOk()) {
+      planSec = `<div class="card">
+          <div class="card-label">Plan</div>
+          <p class="muted">You switched to <b style="color:var(--ink)">${mode}</b> — the ${g.mode} goal (${g.type === 'weight' ? `${g.target.toFixed(1)} lb` : `${g.target.toFixed(1)}% BF`}) is stale. Set a fresh one for this phase.</p>
+          <div class="pill-row">
+            <button class="btn-ghost pressable" data-goal-open>New goal</button>
+            <button class="btn-ghost pressable" style="color:var(--bad)" data-goal-end>End plan</button>
+          </div>
+        </div>`;
+    } else {
+      const pc = Plan.pace();
+      const ms = Plan.milestones();
+      const rv = Plan.weekReview();
+      const t = Fuel.targets();
+      const wkAdh = Plan.adherence(Store.weekBounds().end);
+      const adj = Plan.kcalAdjustment();
+      const chips = ms.map((m) => {
+        const cls = ['mile', m.current ? 'cur' : '', m.completed ? (m.hit === true ? 'hit' : m.hit === false ? 'miss' : '') : ''].filter(Boolean).join(' ');
+        return `<div class="${cls}"><div class="mw">${m.goalWeek ? 'GOAL' : 'W' + m.n}</div><div class="mv">${(m.completed && m.actual != null ? m.actual : m.expected).toFixed(1)}</div></div>`;
+      }).join('');
+      const goalLabel = g.type === 'weight' ? `${g.target.toFixed(1)} lb` : `${g.target.toFixed(1)}% body fat`;
+      const standTone = pc.behindLb <= 0.05 ? 'var(--good)' : 'var(--bad)';
+      const standText = Math.abs(pc.behindLb) < 0.05 ? 'on plan' : `${Math.abs(pc.behindLb).toFixed(1)} lb ${pc.behindLb < 0 ? 'ahead of plan' : 'behind plan'}`;
+      planSec = `<div class="card">
+          <div class="card-label">Plan — ${g.mode} to ${goalLabel}</div>
+          <div class="plan-big">${pc.cur.toFixed(1)} <span class="arr">→</span> ${pc.target.toFixed(1)} <small>lb</small></div>
+          <div class="goal-track"><i style="width:${(pc.progress * 100).toFixed(1)}%"></i></div>
+          <div class="plan-stand">${pc.toGo.toFixed(1)} lb to go · <span style="color:${standTone};font-weight:600">${standText}</span></div>
+          <div class="mile-strip" id="mile-strip">${chips}</div>
+          <div class="plan-dates">${Math.abs(pc.rateLb).toFixed(1)} lb/wk · plan line lands <b style="color:var(--ink)">${Plan.fmtD(pc.planDate)}</b>${pc.projDate ? ` · your pace says ${Plan.fmtD(pc.projDate)}` : pc.stalled ? ' · your pace: stalled' : ''}</div>
+          <div class="divider"></div>
+          <div class="card-label">This week</div>
+          <div class="rx"><span class="k">Sessions</span><span class="v${wkAdh.sessionsOK ? ' done' : ''}">${wkAdh.sessions} / ${wkAdh.goal}</span></div>
+          <div class="rx"><span class="k">Calories · protein</span><span class="v">${t.kcal.toLocaleString()} · ${t.protein}g</span></div>
+          <div class="rx"><span class="k">Slept well</span><span class="v${wkAdh.sleepYes >= 5 ? ' done' : ''}">${wkAdh.sleepYes} / 5+ nights</span></div>
+          ${mode === 'cut' ? `<div class="rx"><span class="k">~8k steps</span><span class="v${wkAdh.stepsYes >= 5 ? ' done' : ''}">${wkAdh.stepsYes} / 5+ days</span></div>` : ''}
+          ${adj ? `<div class="rx-note cal">Calories auto-tuned <b>${adj > 0 ? '+' : ''}${adj}</b> from baseline — weekly calibration against your real results.</div>` : ''}
+          ${rv ? `<div class="rx-note">${rv.msg}</div>` : ''}
+          <div class="pill-row"><button class="btn-ghost small pressable" data-goal-open>Edit goal</button></div>
+        </div>`;
+    }
+
     const insights = Coach.localInsights().map((i) => `<div class="insight"><div class="dot"></div><p>${i.text}</p></div>`).join('');
     const entries = [...s.bodyweight].reverse().slice(0, 7).map((b) => `
       <div class="entry-li" data-edit-day="${b.date}">
@@ -417,6 +517,7 @@
       : `<p class="muted">Add your Anthropic API key in <b>More</b> to unlock the coach — tailored reads on your training, sleep, food, and weight. Costs pennies.</p>`;
 
     $('#trends-body').innerHTML = `
+      ${planSec}
       <div class="mode-seg">
         <button class="pressable ${mode === 'cut' ? 'active' : ''}" data-mode="cut">Cut</button>
         <button class="pressable ${mode === 'bulk' ? 'active' : ''}" data-mode="bulk">Bulk</button>
@@ -456,6 +557,14 @@
     }
 
     /* wire */
+    $$('#trends-body [data-goal-open]').forEach((b) => b.addEventListener('click', () => openGoalSheet()));
+    const gEnd = $('#trends-body [data-goal-end]');
+    if (gEnd) gEnd.addEventListener('click', () => { Plan.clearGoal(); buzz(10); render(); toast('Plan ended'); });
+    const strip = $('#mile-strip');
+    if (strip) {
+      const cur = strip.querySelector('.mile.cur');
+      if (cur) strip.scrollLeft = Math.max(cur.offsetLeft - strip.clientWidth / 2 + cur.clientWidth / 2, 0);
+    }
     $$('#trends-body [data-mode]').forEach((b) => b.addEventListener('click', () => {
       if (b.dataset.mode !== mode) { Store.setMode(b.dataset.mode); buzz(10); render(); toast(`${b.dataset.mode === 'cut' ? 'Cut' : 'Bulk'} mode — targets updated`); }
     }));
@@ -495,6 +604,91 @@
     $('#ew-del').addEventListener('click', () => { Store.removeBodyweight(date); closeSheet(); render(); });
   }
 
+  /* ---------- goal sheet (set / edit / end the plan) ---------- */
+  function openGoalSheet() {
+    const g0 = Plan.goal();
+    const mode = Store.currentMode();
+    const curAvg = Store.rolling7Avg(Store.todayStr()) || (Store.lastWeight() || { weight: 165 }).weight;
+    const curBf = Plan.latestBf();
+    const editing = !!g0;
+    let type = g0 && g0.mode === mode ? g0.type : 'weight';
+    if (type === 'bf' && curBf == null) type = 'weight';
+
+    const defFor = (ty) => ty === 'weight'
+      ? Math.round((mode === 'cut' ? curAvg - 7 : curAvg + 7) * 2) / 2
+      : Math.round((mode === 'cut' ? Math.max(curBf - 3, 5) : curBf + 2) * 2) / 2;
+    const targetLb = (ty, v) => ty === 'weight' ? v : Math.round(((curAvg * (1 - curBf / 100)) / (1 - v / 100)) * 10) / 10;
+
+    const problem = (ty, v) => {
+      if (!isFinite(v)) return 'Enter a number';
+      if (ty === 'weight' && (v < 80 || v > 400)) return 'That’s not a target weight';
+      if (ty === 'bf' && (v < 4 || v > 50)) return 'Keep body fat between 4 and 50%';
+      const t = targetLb(ty, v);
+      if (mode === 'cut' && t >= curAvg - 0.4) return `Cutting — target must be below your ${curAvg.toFixed(1)} lb average`;
+      if (mode === 'bulk' && t <= curAvg + 0.4) return `Bulking — target must be above your ${curAvg.toFixed(1)} lb average`;
+      return null;
+    };
+
+    function paint(val) {
+      openSheet(`
+        <h3>${editing ? 'Edit goal' : 'Set your goal'}</h3>
+        <div class="mode-seg" style="margin-bottom:14px">
+          <button class="pressable ${type === 'weight' ? 'active' : ''}" data-gt="weight">Target weight</button>
+          <button class="pressable ${type === 'bf' ? 'active' : ''}" data-gt="bf" ${curBf == null ? 'disabled style="opacity:.4"' : ''}>Target body fat</button>
+        </div>
+        ${curBf == null ? '<p class="tiny" style="margin:-8px 0 12px">Body-fat goals unlock once you log a BF% with a weigh-in.</p>' : ''}
+        <div class="weigh-row">
+          <div class="stepper">
+            <button class="pressable" data-gstep="-0.5">−</button>
+            <input class="val" id="g-val" type="text" inputmode="decimal" value="${val.toFixed(1)}">
+            <button class="pressable" data-gstep="0.5">+</button>
+          </div>
+          <span class="unit-tag">${type === 'weight' ? 'lb' : '% BF'}</span>
+        </div>
+        <p class="goal-preview" id="g-preview"></p>
+        <button class="btn-volt pressable" id="g-save">${editing ? 'Save — restart the line from today' : 'Start plan'}</button>
+        ${editing ? '<button class="btn-ghost pressable mt8" style="width:100%;color:var(--bad)" id="g-end">End plan</button>' : ''}
+      `);
+      const refresh = () => {
+        const v = parseFloat($('#g-val').value);
+        const bad = problem(type, v);
+        if (bad) { $('#g-preview').innerHTML = `<span style="color:var(--bad)">${bad}</span>`; return; }
+        const t = targetLb(type, v);
+        const rate = Plan.rateFor(curAvg, mode);
+        const wks = Math.abs((t - curAvg) / rate);
+        const lands = new Date(Date.now() + wks * 7 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        $('#g-preview').innerHTML = `${rate > 0 ? '+' : '−'}${Math.abs(rate).toFixed(1)} lb/wk — my prescription · ~${Math.ceil(wks)} wk${Math.ceil(wks) === 1 ? '' : 's'} · lands <b style="color:var(--ink)">${lands}</b>${type === 'bf' ? ` · ≈${t.toFixed(1)} lb` : ''}`;
+      };
+      refresh();
+      $$('#sheet [data-gt]').forEach((b) => b.addEventListener('click', () => {
+        if (b.disabled || b.dataset.gt === type) return;
+        type = b.dataset.gt;
+        buzz(8);
+        paint(g0 && g0.mode === mode && g0.type === type ? g0.target : defFor(type));
+      }));
+      $$('#sheet [data-gstep]').forEach((b) => b.addEventListener('click', () => {
+        const el = $('#g-val');
+        el.value = ((parseFloat(el.value) || defFor(type)) + parseFloat(b.dataset.gstep)).toFixed(1);
+        buzz(6);
+        refresh();
+      }));
+      $('#g-val').addEventListener('input', refresh);
+      $('#g-save').addEventListener('click', () => {
+        const v = parseFloat($('#g-val').value);
+        const bad = problem(type, v);
+        if (bad) { toast(bad); return; }
+        Plan.setGoal(type, Math.round(v * 10) / 10);
+        buzz(18);
+        closeSheet();
+        render();
+        toast(editing ? 'Plan reset — the line restarts today' : 'Plan set — milestones live in Trends');
+      });
+      const end = $('#g-end');
+      if (end) end.addEventListener('click', () => { Plan.clearGoal(); closeSheet(); render(); toast('Plan ended'); });
+    }
+    paint(g0 && g0.mode === mode ? g0.target : defFor(type));
+  }
+
   /* ================= MORE ================= */
 
   renderers.more = () => {
@@ -528,6 +722,16 @@
         </div>
       </div>
       <div class="card">
+        <div class="card-label">Goal</div>
+        ${Plan.goal()
+          ? `<p style="font-size:16px;font-weight:500">${Plan.goal().mode === 'cut' ? 'Cut' : 'Bulk'} to ${Plan.goal().type === 'weight' ? `${Plan.goal().target.toFixed(1)} lb` : `${Plan.goal().target.toFixed(1)}% body fat`}</p>
+             <p class="muted mt8">Line started ${Plan.fmtD(Plan.goal().startDate)} at ${Plan.goal().startWeight.toFixed(1)} lb · milestones live in Trends</p>`
+          : '<p class="muted">No goal set — the plan engine is idle. Give it a target.</p>'}
+        <div class="pill-row">
+          <button class="btn-ghost small pressable" id="more-goal">${Plan.goal() ? 'Edit goal' : 'Set goal'}</button>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-label">Coach · Claude API key</div>
         <p class="muted">Get a key at console.anthropic.com → paste it here. Stored only on this phone.</p>
         <div style="display:flex;gap:8px;margin-top:10px">
@@ -552,6 +756,7 @@
         <p class="muted">NoofGains v1 — built for exactly one user. LFG.</p>
       </div>`;
 
+    $('#more-goal').addEventListener('click', () => openGoalSheet());
     $('#rot-skip').addEventListener('click', () => {
       Store.update((st) => { st.rotation.nextIndex = (st.rotation.nextIndex + 1) % st.rotation.order.length; });
       render();
