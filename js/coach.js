@@ -177,38 +177,84 @@ const Coach = (() => {
       + (usage.cache_read_input_tokens || 0) * PRICE.cacheRead) / 1e6;
   }
 
-  async function request(system, content, history) {
+  /* Streamed request (SSE). Non-streamed calls with adaptive thinking sit
+     silent for 30–60s — iOS backgrounds Safari and the request dies with no
+     error. Streaming puts words on screen in seconds and keeps the
+     connection visibly alive. onEvent gets {thinking, text} as it arrives. */
+  async function request(system, content, history, onEvent) {
     const key = Store.get().settings.anthropicKey;
     if (!key) throw new Error('no-key');
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-opus-4-8',
-        max_tokens: 4000,
-        thinking: { type: 'adaptive' },
-        system,
-        messages: [...(history || []), { role: 'user', content }],
-      }),
-    });
+    const ctrl = new AbortController();
+    const ceiling = setTimeout(() => ctrl.abort(), 180000); // hard stop — nothing should run this long
+    let res;
+    try {
+      res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-opus-4-8',
+          max_tokens: 4000,
+          stream: true,
+          thinking: { type: 'adaptive' },
+          system,
+          messages: [...(history || []), { role: 'user', content }],
+        }),
+      });
+    } catch (e) {
+      clearTimeout(ceiling);
+      throw new Error(e.name === 'AbortError' ? 'Timed out — try again' : 'No connection — check your network');
+    }
 
     if (!res.ok) {
+      clearTimeout(ceiling);
       const body = await res.json().catch(() => null);
       const msg = body && body.error ? body.error.message : `HTTP ${res.status}`;
       throw new Error(res.status === 401 ? 'bad-key' : msg);
     }
 
-    const data = await res.json();
-    if (data.stop_reason === 'refusal') throw new Error('Claude declined to answer — try again.');
-    const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', text = '', stop = null;
+    const usage = {};
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop(); // keep the partial line
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let ev;
+          try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+          if (ev.type === 'message_start') {
+            Object.assign(usage, ev.message.usage);
+          } else if (ev.type === 'content_block_start' && ev.content_block.type === 'thinking') {
+            if (onEvent) onEvent({ thinking: true, text });
+          } else if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
+            text += ev.delta.text;
+            if (onEvent) onEvent({ thinking: false, text });
+          } else if (ev.type === 'message_delta') {
+            if (ev.usage) Object.assign(usage, ev.usage);
+            if (ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason;
+          }
+        }
+      }
+    } finally {
+      clearTimeout(ceiling);
+    }
+
+    if (stop === 'refusal') throw new Error('Claude declined to answer — try rephrasing.');
+    text = text.trim();
     if (!text) throw new Error('Empty response — try again.');
-    return { text, cost: costOf(data.usage) };
+    return { text, cost: costOf(usage) };
   }
 
   function trackSpend(s, cost) {
@@ -219,8 +265,8 @@ const Coach = (() => {
     sp.byMonth[mo] = (sp.byMonth[mo] || 0) + cost;
   }
 
-  async function analyze() {
-    const { text, cost } = await request(SYSTEM, 'My data:\n' + JSON.stringify(buildSummary()) + '\n\nCoach me.');
+  async function analyze(onEvent) {
+    const { text, cost } = await request(SYSTEM, 'My data:\n' + JSON.stringify(buildSummary()) + '\n\nCoach me.', null, onEvent);
     Store.update((s) => {
       s.coach.lastInsight = { date: Store.todayStr(), text, costUsd: cost };
       trackSpend(s, cost);
@@ -236,7 +282,7 @@ const Coach = (() => {
 
   const chatThread = () => Store.get().coach.chat || [];
 
-  async function chat(text) {
+  async function chat(text, onEvent) {
     const history = chatThread()
       .slice(-CHAT_CONTEXT)
       .map((m) => ({ role: m.role, content: m.text }));
@@ -245,7 +291,7 @@ const Coach = (() => {
       (s.coach.chat || (s.coach.chat = [])).push({ role: 'user', text, date: Store.todayStr() });
     });
     try {
-      const { text: reply, cost } = await request(system, text, history);
+      const { text: reply, cost } = await request(system, text, history, onEvent);
       Store.update((s) => {
         s.coach.chat.push({ role: 'assistant', text: reply, date: Store.todayStr(), costUsd: cost });
         trackSpend(s, cost);

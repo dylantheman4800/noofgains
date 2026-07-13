@@ -652,6 +652,13 @@
 
   /* ================= COACH ================= */
 
+  /* In-flight reply lives OUTSIDE the render cycle — re-renders (tab hops,
+     sync pulls) repaint mid-stream without losing the live bubble. */
+  let chatLive = null; // { thinking: bool, text: string } while a reply streams
+  let readLive = null; // same, for the weekly read
+
+  const CHAT_SUGGESTIONS = ['What should I focus on today?', 'Why am I stalling?', 'Plan my training week'];
+
   renderers.coach = () => {
     const s = Store.get();
     const key = s.settings.anthropicKey;
@@ -671,19 +678,31 @@
     const staleDays = li ? Math.round((Date.now() - new Date(li.date + 'T12:00:00').getTime()) / 86400000) : null;
     const thread = Coach.chatThread();
 
+    const readBody = readLive
+      ? `<div class="coach-out" id="read-live">${readLive.text ? esc(readLive.text) : ''}</div>${readLive.thinking && !readLive.text ? '<div class="chat-dots" style="padding:6px 0"><i></i><i></i><i></i></div>' : ''}`
+      : li
+        ? `<div class="coach-out">${esc(li.text)}</div><div class="coach-meta">${li.date}${li.costUsd != null ? ` · $${li.costUsd.toFixed(2)}` : ''}${staleDays > 7 ? ' · getting stale' : ''}</div>`
+        : '<p class="muted">The full top-down read: what’s working, what’s slipping, one order for the week.</p>';
+
     const readCard = `
       <div class="card">
         <div class="card-label">Weekly read</div>
-        ${li
-          ? `<div class="coach-out">${esc(li.text)}</div><div class="coach-meta">${li.date}${li.costUsd != null ? ` · $${li.costUsd.toFixed(2)}` : ''}${staleDays > 7 ? ' · getting stale' : ''}</div>`
-          : '<p class="muted">The full top-down read: what’s working, what’s slipping, one order for the week.</p>'}
-        <button class="btn-${li && staleDays <= 7 ? 'ghost' : 'volt'} pressable mt12" style="width:100%" id="coach-run">${li ? 'Run it again' : 'Run weekly read'}</button>
+        ${readBody}
+        ${readLive ? '' : `<button class="btn-${li && staleDays <= 7 ? 'ghost' : 'volt'} pressable mt12" style="width:100%" id="coach-run">${li ? 'Run it again' : 'Run weekly read'}</button>`}
       </div>`;
 
     const bubbles = thread.map((m) => m.role === 'user'
       ? `<div class="chat-b me">${esc(m.text)}</div>`
       : `<div class="chat-b coach">${esc(m.text)}${m.costUsd != null ? `<div class="chat-cost">$${m.costUsd.toFixed(2)}</div>` : ''}</div>`
     ).join('');
+
+    const liveBubble = chatLive
+      ? `<div class="chat-b coach" id="chat-live">${chatLive.text ? esc(chatLive.text) : '<div class="chat-dots"><i></i><i></i><i></i></div>'}</div>`
+      : '';
+
+    const suggestions = !thread.length && !chatLive
+      ? `<div class="chat-sugg">${CHAT_SUGGESTIONS.map((q) => `<button class="pressable" data-sugg="${esc(q)}">${esc(q)}</button>`).join('')}</div>`
+      : '';
 
     $('#coach-body').innerHTML = `
       ${readCard}
@@ -692,10 +711,11 @@
           <div class="card-label">Ask the coach</div>
           ${thread.length ? '<button class="cu-link" id="chat-clear">clear</button>' : ''}
         </div>
-        <div class="chat-thread" id="chat-thread">${bubbles || '<p class="muted" style="padding:6px 0 12px">“Why am I stalling?” · “What should I hit today?” · “Am I sleeping enough to cut?”</p>'}</div>
+        <div class="chat-thread" id="chat-thread">${bubbles + liveBubble || ''}</div>
+        ${suggestions}
         <div class="chat-inrow">
-          <input type="text" id="chat-in" placeholder="Ask anything about your data…" autocomplete="off">
-          <button class="btn-volt pressable" id="chat-send" style="width:52px;min-height:44px;flex-shrink:0">
+          <input type="text" id="chat-in" placeholder="Ask anything about your data…" autocomplete="off" ${chatLive ? 'disabled' : ''}>
+          <button class="btn-volt pressable" id="chat-send" style="width:52px;min-height:44px;flex-shrink:0" ${chatLive ? 'disabled' : ''}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
           </button>
         </div>
@@ -704,39 +724,55 @@
     const scrollThread = () => { const t = $('#chat-thread'); if (t) t.scrollTop = t.scrollHeight; };
     scrollThread();
 
-    $('#coach-run').addEventListener('click', async () => {
-      const run = $('#coach-run');
-      run.innerHTML = '<span class="spin"></span> Reading your data…';
-      run.disabled = true;
+    const run = $('#coach-run');
+    if (run) run.addEventListener('click', async () => {
+      readLive = { thinking: true, text: '' };
+      render();
       try {
-        await Coach.analyze();
+        await Coach.analyze((ev) => {
+          if (readLive) {
+            readLive = { thinking: ev.thinking, text: ev.text };
+            const el = $('#read-live');
+            if (el && ev.text) el.textContent = ev.text;
+            else if (ev.thinking && !ev.text) render();
+          }
+        });
+        readLive = null;
         render();
       } catch (e) {
-        run.disabled = false;
-        run.textContent = li ? 'Run it again' : 'Run weekly read';
+        readLive = null;
+        render();
         toast(e.message === 'bad-key' ? 'API key rejected — check it in More' : 'Coach unavailable: ' + e.message);
       }
     });
 
-    const input = $('#chat-in'), send = $('#chat-send');
-    const doSend = async () => {
-      const text = input.value.trim();
-      if (!text || send.disabled) return;
-      send.disabled = true;
-      input.value = '';
-      $('#chat-thread').insertAdjacentHTML('beforeend', `<div class="chat-b me">${esc(text)}</div><div class="chat-b coach thinking"><span class="spin" style="border-color:rgba(255,255,255,.2);border-top-color:var(--ink-2)"></span></div>`);
-      scrollThread();
+    const doSend = async (text) => {
+      if (!text || chatLive) return;
+      chatLive = { thinking: true, text: '' };
       try {
-        await Coach.chat(text);
+        const p = Coach.chat(text, (ev) => {
+          if (!chatLive) return;
+          chatLive = { thinking: ev.thinking, text: ev.text };
+          const el = $('#chat-live');
+          if (el && ev.text) { el.textContent = ev.text; scrollThread(); }
+        });
+        render(); // user bubble is in the store now; live bubble from chatLive
+        await p;
+        chatLive = null;
         render();
-        $('#chat-in').focus();
       } catch (e) {
+        chatLive = null;
         render();
-        toast(e.message === 'bad-key' ? 'API key rejected — check it in More' : 'Coach unavailable: ' + e.message);
+        const inEl = $('#chat-in');
+        if (inEl) { inEl.value = text; inEl.focus(); } // nothing lost — one tap to retry
+        toast(e.message === 'bad-key' ? 'API key rejected — check it in More' : e.message);
       }
     };
-    send.addEventListener('click', doSend);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSend(); });
+
+    const input = $('#chat-in'), send = $('#chat-send');
+    send.addEventListener('click', () => doSend(input.value.trim()));
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSend(input.value.trim()); });
+    $$('#coach-body [data-sugg]').forEach((b) => b.addEventListener('click', () => { buzz(8); doSend(b.dataset.sugg); }));
 
     const clear = $('#chat-clear');
     if (clear) clear.addEventListener('click', () => { Coach.clearChat(); render(); toast('Chat cleared'); });

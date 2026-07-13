@@ -466,11 +466,29 @@ input::placeholder { color: var(--ink-3); }
 
 /* coach chat */
 .chat-thread {
-  max-height: 46vh;
+  max-height: 52vh;
   overflow-y: auto;
   display: flex; flex-direction: column; gap: 8px;
   padding: 4px 0 12px;
   -webkit-overflow-scrolling: touch;
+}
+.chat-thread:empty { padding: 0; }
+.chat-dots { display: flex; gap: 4px; align-items: center; padding: 3px 0; }
+.chat-dots i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ink-3);
+  animation: dotPulse 1.2s ease-in-out infinite;
+}
+.chat-dots i:nth-child(2) { animation-delay: 0.15s; }
+.chat-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dotPulse { 0%, 60%, 100% { opacity: 0.3; transform: scale(1); } 30% { opacity: 1; transform: scale(1.25); } }
+.chat-sugg { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; }
+.chat-sugg button {
+  text-align: left;
+  padding: 10px 13px;
+  border-radius: 12px;
+  background: var(--s2); border: 1px solid var(--hairline);
+  color: var(--ink-2); font-size: 14px;
 }
 .chat-b {
   max-width: 86%;
