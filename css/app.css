@@ -552,6 +552,64 @@ input::placeholder { color: var(--ink-3); }
 .meal .note { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
 .meal .swap { align-self: flex-start; flex-shrink: 0; }
 
+/* ---------- Food (voice log) ---------- */
+
+.food-ta {
+  width: 100%; min-height: 116px;
+  resize: none;
+  font: inherit; letter-spacing: inherit; line-height: 1.5;
+  color: var(--ink);
+  background: var(--s2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-md);
+  padding: 12px 13px;
+  outline: none;
+}
+.food-ta:focus { border-color: var(--hairline-strong); }
+.food-ta::placeholder { color: var(--ink-3); }
+.food-mic-hint {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; color: var(--ink-3);
+  margin-top: 8px;
+}
+.food-mic-hint svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.h-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 12.5px; font-weight: 600;
+  flex-shrink: 0;
+}
+.h-chip.yes { background: var(--good-dim); color: var(--good); }
+.h-chip.no { background: var(--bad-dim); color: var(--bad); }
+
+.food-item {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--hairline);
+  font-size: 14px;
+}
+.food-item:first-of-type { border-top: none; }
+.food-item .n { min-width: 0; }
+.food-item .n small { display: block; color: var(--ink-3); font-size: 12px; margin-top: 1px; }
+.food-item .m { color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 13px; }
+.food-item .m b { color: var(--volt); font-weight: 600; }
+
+.food-day {
+  width: 100%; text-align: left;
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 0;
+  border-top: 1px solid var(--hairline);
+}
+.food-day:first-of-type { border-top: none; }
+.food-day .d { width: 58px; flex-shrink: 0; font-size: 13px; color: var(--ink-2); }
+.food-day .sum { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.food-day .sum small { display: block; font-size: 12px; color: var(--ink-3); font-weight: 400; margin-top: 1px; }
+.food-day-detail { padding: 2px 0 12px; }
+.food-note { font-size: 12.5px; color: var(--ink-3); margin-top: 8px; line-height: 1.45; }
+
 /* ---------- More ---------- */
 
 .set-li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 13px 0; border-top: 1px solid var(--hairline); font-size: 15px; }

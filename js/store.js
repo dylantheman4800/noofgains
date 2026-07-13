@@ -41,6 +41,7 @@ const Store = (() => {
       plan: { goal: null },                           // goal: { type:'weight'|'bf', target, startDate, startWeight, startBf, mode }
       fuel: { swaps: {}, slotChoice: {} },            // swaps: { 'date|slotId': n }, slotChoice: { date: 'am'|'pm'|'off' }
       photos: { checkins: [], skips: [] },            // checkins: { date, poses, verdict? } — metadata only; images live encrypted in IndexedDB
+      food: { days: [] },                             // { date, raw, items, totals, healthy, note, loggedAt, costUsd } — one per date
     };
   }
 
@@ -176,6 +177,28 @@ const Store = (() => {
     save();
   }
 
+  /* ---------- food log ---------- */
+
+  function foodOn(date) {
+    return state.food.days.find((f) => f.date === date) || null;
+  }
+
+  function setFood(date, rec) {
+    const i = state.food.days.findIndex((f) => f.date === date);
+    if (i === -1) {
+      state.food.days.push(rec);
+      state.food.days.sort((a, b) => a.date.localeCompare(b.date));
+    } else {
+      state.food.days[i] = rec; // re-log replaces the day
+    }
+    save();
+  }
+
+  function deleteFood(date) {
+    state.food.days = state.food.days.filter((f) => f.date !== date);
+    save();
+  }
+
   /* ---------- modes ---------- */
 
   function currentMode(date = todayStr()) {
@@ -204,6 +227,10 @@ const Store = (() => {
     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.sessions)) {
       throw new Error('Not a NoofGains backup file');
     }
+    // Backups from older versions predate newer slices — same merge as load().
+    const base = seed();
+    for (const k of Object.keys(base)) if (!(k in parsed)) parsed[k] = base[k];
+    for (const k of Object.keys(base.settings)) if (!(k in parsed.settings)) parsed.settings[k] = base.settings[k];
     state = parsed;
     save();
   }
@@ -217,6 +244,6 @@ const Store = (() => {
     get: () => state,
     todayStr, uid, typeById, nextUpTypeId, logSession, removeSession, sessionsOn,
     weekBounds, weekStats, setBodyweight, removeBodyweight, lastWeight, rolling7Avg,
-    checkinOn, setCheckin, currentMode, setMode, exportJSON, importJSON, update, subscribe,
+    checkinOn, setCheckin, foodOn, setFood, deleteFood, currentMode, setMode, exportJSON, importJSON, update, subscribe,
   };
 })();

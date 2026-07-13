@@ -133,6 +133,20 @@ const Coach = (() => {
       })),
       bodyweight: s.bodyweight.filter((b) => b.date >= cutoff),
       checkins: s.checkins.filter((c) => c.date >= cutoff),
+      food: (() => {
+        const days = ((s.food && s.food.days) || []).filter((f) => f.date >= cutoff);
+        if (!days.length) return null;
+        const counts = {};
+        days.forEach((f) => f.items.forEach((x) => { const k = x.name.toLowerCase(); counts[k] = (counts[k] || 0) + 1; }));
+        return {
+          daysLogged: days.length,
+          avgKcal: Math.round(days.reduce((a, f) => a + f.totals.kcal, 0) / days.length),
+          avgProteinG: Math.round(days.reduce((a, f) => a + f.totals.protein_g, 0) / days.length),
+          healthyPct: Math.round((100 * days.filter((f) => f.healthy).length) / days.length),
+          topFoods: Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([n, c]) => `${n} ×${c}`),
+          recent: days.slice(-14).map((f) => ({ date: f.date, totals: f.totals, healthy: f.healthy, items: f.items.map((x) => x.name) })),
+        };
+      })(),
       photoVerdict: (() => {
         const pcs = (s.photos && s.photos.checkins) || [];
         for (let i = pcs.length - 1; i >= 0; i--) if (pcs[i].verdict) return { checkinDate: pcs[i].date, text: pcs[i].verdict.text };
@@ -145,6 +159,7 @@ const Coach = (() => {
     'You are the coach inside NoofGains, a personal fitness app used by exactly one person: Dylan ("Noof"). ' +
     'Voice: a coach who calls you out — warm but direct. Praise real consistency specifically; state misses plainly with numbers ("you skipped 2 of the last 3 Leg days"). No corporate wellness-speak, no lectures, no guilt-spirals — facts, one pattern, one concrete next action. ' +
     'You get his last ~90 days as JSON: binary workout log (no sets/weights by design — do not ask for them), body weight + body fat, binary sleep/food/steps check-ins (~8k steps is the cut-day target), bulk/cut phases, and his real-life context (gyms, office food rhythm). ' +
+    'If a `food` object is present he voice-logs his days — items with estimated macros (treat as ±20% estimates) plus 90-day aggregates. Coach eating HABITS from it: protein consistency, repeat offenders in topFoods, weekday patterns. NEVER re-derive his calorie targets from those estimates — the plan calibrates calories from his scale trend, which is ground truth. Days without a log still carry the binary ateHealthy. ' +
     'If a `plan` object is present, the app already runs a deterministic goal plan (fixed weekly milestone line, auto calorie calibration) — coach WITHIN that plan; do not invent a competing one. ' +
     'Look for cross-signal patterns (bad sleep → skipped sessions → stalled weight). Respect his logistics: never suggest a weekday-morning Domino trip if sleep is the problem; Tue/Thu are his self-catered risk days. ' +
     'If `photoVerdict` is present it is your own most recent visual read of his physique from progress photos — trust it as ground truth about how he looks and weave it in where relevant. ' +
@@ -154,7 +169,7 @@ const Coach = (() => {
     'You are the coach inside NoofGains, a personal fitness app used by exactly one person: Dylan ("Noof"), chatting with him directly. ' +
     'Voice: a coach who calls you out — warm but direct, no flattery, no lectures. Short answers: 1–3 short paragraphs, plain text, no markdown. ' +
     'Every message includes his current data snapshot (last ~90 days): binary workout log with weekday per session (spot schedule patterns like "chest Mondays, runs weekends"), body weight + body fat, binary sleep/food/steps check-ins with step counts when posted (~8k steps is the cut-day target), bulk/cut phases, his goal plan, calorie/protein targets, real-life context (gyms, office food rhythm, 345 Hudson Mon–Fri), and — when present — photoVerdict, your own most recent visual read of his physique. ' +
-    'Answer his questions grounded ONLY in that data and context; when numbers exist, use them. The app tracks binary yes/no for food and sleep by design — no meal logs, no sets/weights. If he asks about something the app doesn’t track, say so plainly instead of guessing. ' +
+    'Answer his questions grounded ONLY in that data and context; when numbers exist, use them. Workouts are binary by design — no sets/weights. When a `food` object is present he voice-logs what he eats: items + estimated macros (±20% estimates — coach habits and protein consistency from them, and NEVER re-derive his calorie targets from them; the plan calibrates calories from his scale trend). Unlogged days fall back to the binary ateHealthy. If he asks about something the app doesn’t track, say so plainly instead of guessing. ' +
     'If a `plan` object is present the app already runs a deterministic goal plan — coach within it, don’t invent a competing one. ' +
     'Look for cross-signal patterns when relevant (bad sleep → skipped sessions → stalled weight). When giving advice, end with exactly one concrete next action.';
 
@@ -350,5 +365,5 @@ const Coach = (() => {
     return text;
   }
 
-  return { localInsights, recoveryFlag, analyze, analyzePhotos, chat, chatThread, clearChat };
+  return { localInsights, recoveryFlag, analyze, analyzePhotos, chat, chatThread, clearChat, costOf, trackSpend };
 })();

@@ -195,7 +195,15 @@
           <button class="btn-ghost small pressable" data-photo-start>Camera</button>
         </div>`;
       if (it.id === 'sleep') return qRow('sleptWell', 'Sleep well last night?', `${yesterday.toLocaleDateString('en-US', { weekday: 'short' })} night · ${shortDate(yesterday)}`);
-      if (it.id === 'food') return qRow('ateHealthy', 'Eat healthy today?', `Today · ${shortDate(now)}`);
+      if (it.id === 'food') return `
+        <div class="plan-item">
+          <span class="pi-dot"></span>
+          <div class="pi-body"><div class="pi-label">Eat healthy today?</div><div class="pi-sub"><button class="cu-link" data-food-go>log the day →</button> · ${shortDate(now)}</div></div>
+          <span class="yn pi-yn">
+            <button class="pressable" data-ci="ateHealthy" data-val="1">Yes</button>
+            <button class="pressable" data-ci="ateHealthy" data-val="0">No</button>
+          </span>
+        </div>`;
       if (it.id === 'steps') return `
         <div class="plan-item">
           <span class="pi-dot"></span>
@@ -274,6 +282,8 @@
     }));
     const sTog = $('#today-cards [data-steps-expand]');
     if (sTog) sTog.addEventListener('click', () => { $('#steps-expand').classList.toggle('open'); buzz(6); });
+    const foodGo = $('#today-cards [data-food-go]');
+    if (foodGo) foodGo.addEventListener('click', () => { buzz(6); show('food'); });
     const sval = $('#s-val');
     if (sval) {
       $$('#today-cards [data-sstep]').forEach((b) => b.addEventListener('click', () => {
@@ -387,6 +397,188 @@
 
     $$('#fuel-body [data-slot]').forEach((b) => b.addEventListener('click', () => { Fuel.setSlotChoice(today, b.dataset.slot); buzz(8); render(); }));
     $$('#fuel-body [data-swap]').forEach((b) => b.addEventListener('click', () => { Fuel.swap(today, b.dataset.swap); buzz(8); render(); }));
+  };
+
+  /* ================= FOOD ================= */
+
+  /* In-flight parse + draft text live OUTSIDE the render cycle so re-renders
+     (sync pulls, tab hops) never eat a half-dictated recap. */
+  let foodLive = false;    // a parse is running
+  let foodEditing = false; // today's card is in textarea mode despite a saved log
+  let foodDraft = '';      // textarea contents across renders
+  let foodExpanded = null; // date expanded in the history list
+
+  const MIC_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+
+  const macroBar = (totals, t) => {
+    const pct = (v) => Math.min((v / t.kcal) * 100, 100);
+    return `<div class="macro-bar" style="margin-top:4px">
+        <div class="track">
+          <i class="p" style="width:${pct(totals.protein_g * 4)}%"></i>
+          <i class="f" style="width:${pct(totals.fat_g * 9)}%"></i>
+          <i class="c" style="width:${pct(totals.carbs_g * 4)}%"></i>
+        </div>
+        <div class="macro-nums">
+          <span><b>${totals.kcal.toLocaleString()}</b> / ${t.kcal.toLocaleString()} cal</span>
+          <span style="color:var(--volt)"><b>${totals.protein_g}</b> / ${t.protein}g protein</span>
+        </div>
+        <div class="macro-nums"><span>${totals.fat_g}g fat</span><span>${totals.carbs_g}g carbs</span></div>
+      </div>`;
+  };
+
+  const foodItems = (rec) => rec.items.map((x) => `
+      <div class="food-item">
+        <div class="n">${esc(x.name)}<small>${esc(x.portion)}</small></div>
+        <div class="m">${x.kcal} cal · <b>${x.protein_g}g P</b></div>
+      </div>`).join('');
+
+  /* Healthy chip shows the CURRENT answer (checkin wins over the parse). */
+  const healthyNow = (rec) => {
+    const c = Store.checkinOn(rec.date) || {};
+    return c.ateHealthy != null ? c.ateHealthy : rec.healthy;
+  };
+  const hChip = (rec, tap) => {
+    const h = healthyNow(rec);
+    const label = h ? 'Healthy day' : 'Off plan';
+    return tap
+      ? `<button class="h-chip ${h ? 'yes' : 'no'} pressable" data-hflip="${rec.date}">${label}</button>`
+      : `<span class="h-chip ${h ? 'yes' : 'no'}">${label}</span>`; // span — history rows are <button>s, no nesting
+  };
+
+  renderers.food = () => {
+    const s = Store.get();
+    const today = Store.todayStr();
+
+    if (!s.settings.anthropicKey) {
+      $('#food-body').innerHTML = `
+        <div class="card">
+          <div class="card-label">Food log · Claude</div>
+          <p class="muted">Say what you ate once a day — Claude turns it into calories, protein, and a healthy-day verdict the coach can use. Runs on your own API key, costs about a cent a day.</p>
+          <button class="btn-volt pressable mt12" id="food-gokey">Add API key in More</button>
+        </div>`;
+      $('#food-gokey').addEventListener('click', () => show('more'));
+      return;
+    }
+
+    const rec = Store.foodOn(today);
+    const t = Fuel.targets(today);
+
+    /* --- today card --- */
+    let todayCard;
+    if (rec && !foodEditing && !foodLive) {
+      todayCard = `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+            <div class="card-label" style="margin:0">Today</div>
+            ${hChip(rec, true)}
+          </div>
+          ${macroBar(rec.totals, t)}
+          <div class="divider" style="margin:12px 0 2px"></div>
+          ${foodItems(rec)}
+          ${rec.note ? `<div class="food-note">${esc(rec.note)}</div>` : ''}
+          <div class="pill-row">
+            <button class="btn-ghost small pressable" id="food-edit">Edit</button>
+            <button class="btn-ghost small pressable" style="color:var(--bad);flex:0 0 auto" id="food-del">Remove</button>
+          </div>
+          <p class="tiny mt8">Estimates for habit coaching — your scale calibrates the real calorie math.${rec.costUsd != null ? ` · $${rec.costUsd.toFixed(2)}` : ''}</p>
+        </div>`;
+    } else {
+      todayCard = `
+        <div class="card">
+          <div class="card-label">Today</div>
+          <textarea class="food-ta" id="food-in" placeholder="Eggs and bacon at the office, Cava bowl with chicken for lunch, a David bar, leftover salmon for dinner…" ${foodLive ? 'disabled' : ''}>${esc(foodDraft || (foodEditing && rec ? rec.raw : ''))}</textarea>
+          <div class="food-mic-hint">${MIC_SVG} Tap the box, hit the mic on your keyboard, and just talk.</div>
+          <button class="btn-volt pressable mt12" id="food-log" ${foodLive ? 'disabled' : ''}>
+            ${foodLive ? '<span class="spin"></span> Estimating…' : 'Log it'}
+          </button>
+          ${foodEditing && rec && !foodLive ? '<button class="btn-ghost pressable mt8" style="width:100%" id="food-cancel">Keep what I had</button>' : ''}
+        </div>`;
+    }
+
+    /* --- history --- */
+    const past = s.food.days.filter((f) => f.date < today).reverse();
+    const historyCard = `
+      <div class="card">
+        <div class="card-label">Logged days</div>
+        ${past.length ? past.map((f) => {
+          const open = foodExpanded === f.date;
+          const nice = new Date(f.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return `
+            <button class="food-day pressable" data-fd="${f.date}">
+              <span class="d">${nice}</span>
+              <span class="sum">${f.totals.kcal.toLocaleString()} cal · <b style="color:var(--volt)">${f.totals.protein_g}g P</b><small>${f.items.length} item${f.items.length === 1 ? '' : 's'}</small></span>
+              ${hChip(f, false)}
+              <span class="pi-chev">${open ? '−' : '›'}</span>
+            </button>
+            ${open ? `<div class="food-day-detail">${foodItems(f)}${f.note ? `<div class="food-note">${esc(f.note)}</div>` : ''}<div class="pill-row"><button class="cu-link" data-fdel="${f.date}">delete this day</button></div></div>` : ''}`;
+        }).join('') : '<p class="muted">Past days land here — calories, protein, and what you actually ate.</p>'}
+      </div>`;
+
+    $('#food-body').innerHTML = todayCard + historyCard;
+
+    /* --- wire --- */
+    const ta = $('#food-in');
+    if (ta) ta.addEventListener('input', () => { foodDraft = ta.value; });
+
+    const logBtn = $('#food-log');
+    if (logBtn) logBtn.addEventListener('click', async () => {
+      const text = (ta.value || '').trim();
+      if (!text) { toast('Say what you ate first'); return; }
+      if (foodLive) return;
+      foodLive = true;
+      foodDraft = text;
+      render();
+      try {
+        const saved = await Food.log(today, text);
+        foodLive = false; foodEditing = false; foodDraft = '';
+        buzz(18);
+        render();
+        toast(saved.healthy ? 'Logged — healthy day ✓' : 'Logged — off plan today');
+      } catch (e) {
+        foodLive = false; foodEditing = true; // draft survives in foodDraft
+        render();
+        toast(e.message === 'bad-key' ? 'API key rejected — check it in More' : e.message);
+      }
+    });
+
+    const editBtn = $('#food-edit');
+    if (editBtn) editBtn.addEventListener('click', () => { foodEditing = true; foodDraft = rec.raw; render(); });
+    const cancelBtn = $('#food-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => { foodEditing = false; foodDraft = ''; render(); });
+    const delBtn = $('#food-del');
+    if (delBtn) delBtn.addEventListener('click', () => {
+      const old = rec;
+      Store.deleteFood(today);
+      Store.setCheckin(today, 'ateHealthy', null); // question reopens
+      foodEditing = false; foodDraft = '';
+      render();
+      toast('Log removed', () => { Store.setFood(old.date, old); Store.setCheckin(old.date, 'ateHealthy', old.healthy); });
+    });
+
+    $$('#food-body [data-hflip]').forEach((b) => b.addEventListener('click', () => {
+      const d = b.dataset.hflip;
+      const cur = healthyNow(Store.foodOn(d));
+      Store.update((st) => { const f = st.food.days.find((x) => x.date === d); if (f) f.healthy = !cur; });
+      Store.setCheckin(d, 'ateHealthy', !cur);
+      buzz(10);
+      render();
+      toast(!cur ? 'Marked healthy' : 'Marked off plan');
+    }));
+
+    $$('#food-body [data-fd]').forEach((b) => b.addEventListener('click', () => {
+      foodExpanded = foodExpanded === b.dataset.fd ? null : b.dataset.fd;
+      buzz(6);
+      render();
+    }));
+    $$('#food-body [data-fdel]').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const d = b.dataset.fdel;
+      const old = Store.foodOn(d);
+      Store.deleteFood(d);
+      foodExpanded = null;
+      render();
+      toast('Day deleted', () => Store.setFood(old.date, old));
+    }));
   };
 
   /* ================= HISTORY ================= */
