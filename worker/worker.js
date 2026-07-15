@@ -196,9 +196,13 @@ async function withingsAccess(env) {
   }
 }
 
-/* Pull new weigh-ins since the last sync. First reading of the day wins
-   (morning fasted beats a late-day re-weigh); fat % rides along when sent.
+/* Pull new weigh-ins since the last sync. Device readings only — grps with a
+   manual-entry attrib (typed into the Withings app, e.g. the profile weight
+   at account setup) are skipped; the scale is the ground truth. First device
+   reading of the day wins (morning fasted beats a late-day re-weigh); fat %
+   rides along when sent.
    meastype 1 = weight (kg), 6 = fat ratio (%). Real value = value*10^unit. */
+const MANUAL_ATTRIBS = [2, 4, 5, 7, 8];
 async function fetchWeights(env) {
   const access = await withingsAccess(env);
   if (!access) return { connected: false };
@@ -208,6 +212,7 @@ async function fetchWeights(env) {
   }, access);
   let applied = 0;
   for (const g of (b.measuregrps || []).slice().sort((x, y) => x.date - y.date)) {
+    if (MANUAL_ATTRIBS.includes(g.attrib)) continue; // typed, not measured
     const vals = {};
     for (const m of g.measures || []) vals[m.type] = m.value * Math.pow(10, m.unit);
     if (vals[1] == null) continue;
