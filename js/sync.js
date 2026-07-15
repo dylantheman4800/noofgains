@@ -3,8 +3,9 @@
    1. Report which DATA items are still unanswered today (worker pushes at
       9pm ET iff something is missing — train pressure never triggers it).
    2. Pull step counts posted by the iPhone Shortcut and auto-answer.
-   3. Manage the Web Push subscription.
-   Only booleans, dates, and step counts ever leave the phone. */
+   3. Pull Withings scale weigh-ins and log them (scale beats manual).
+   4. Manage the Web Push subscription.
+   Only booleans, dates, step counts, and scale readings ever leave the phone. */
 'use strict';
 
 const Sync = (() => {
@@ -46,16 +47,17 @@ const Sync = (() => {
     }, 1500);
   }
 
-  /* ---------- steps pull (Shortcut → worker → here) ---------- */
+  /* ---------- pull (Shortcut steps + Withings weigh-ins → here) ---------- */
 
-  /* Ground truth wins: a posted count overwrites a from-memory yes/no.
-     Today's under-target count stays an open question until 9pm — a late
-     walk can still flip it. Past days resolve immediately. */
+  /* Ground truth wins: a posted count overwrites a from-memory yes/no, and a
+     scale reading overwrites a hand-typed weight. Today's under-target step
+     count stays an open question until 9pm — a late walk can still flip it.
+     Past days resolve immediately. */
   async function pull() {
     if (!enabled()) return null;
     const today = Store.todayStr();
-    const { steps } = await api('/pull');
-    let applied = null;
+    const { steps, weights } = await api('/pull');
+    let stepsApplied = null;
     for (const [date, n] of Object.entries(steps || {})) {
       if (date > today || !isFinite(n)) continue;
       const c = Store.checkinOn(date) || {};
@@ -65,9 +67,18 @@ const Sync = (() => {
       if (date < today || hit || new Date().getHours() >= 21) {
         Store.setCheckin(date, 'hitSteps', hit);
       }
-      if (date === today) applied = n;
+      if (date === today) stepsApplied = n;
     }
-    return applied;
+    let weightApplied = null;
+    for (const [date, w] of Object.entries(weights || {})) {
+      if (date > today || !w || !isFinite(w.lb)) continue;
+      const cur = Store.get().bodyweight.find((b) => b.date === date);
+      const fat = w.fat != null ? w.fat : (cur ? cur.bodyFat : undefined); // never erase a known fat%
+      if (cur && cur.weight === w.lb && (cur.bodyFat != null ? cur.bodyFat : null) === (fat != null ? fat : null)) continue;
+      Store.setBodyweight(date, w.lb, fat);
+      if (date === today) weightApplied = w.lb;
+    }
+    return { steps: stepsApplied, weight: weightApplied };
   }
 
   /* ---------- push subscription ---------- */
@@ -102,6 +113,7 @@ const Sync = (() => {
 
   const status = () => api('/status');
   const testPush = () => api('/test-push', { method: 'POST' });
+  const withingsConnectUrl = () => `${WORKER_URL}/withings/connect?t=${encodeURIComponent(token())}`;
 
-  return { enabled, scheduleStatePing, pull, subscription, enablePush, disablePush, status, testPush, workerUrl: WORKER_URL };
+  return { enabled, scheduleStatePing, pull, subscription, enablePush, disablePush, status, testPush, withingsConnectUrl, workerUrl: WORKER_URL };
 })();

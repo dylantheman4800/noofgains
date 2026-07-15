@@ -1118,7 +1118,7 @@
       </div>
       <div class="card">
         <div class="card-label">Sync · smart reminders</div>
-        <p class="muted">Your private worker: a 9pm push only when the day still has unanswered data, and steps that log themselves.</p>
+        <p class="muted">Your private worker: a 9pm push only when the day still has unanswered data, steps that log themselves, and scale weigh-ins that fill in on their own.</p>
         <div style="display:flex;gap:8px;margin-top:10px">
           <input type="password" id="sync-token" style="flex:1" placeholder="sync token" value="${esc(s.settings.syncToken || '')}">
           <button class="btn-ghost pressable" id="sync-save">Save</button>
@@ -1128,6 +1128,7 @@
         <div class="pill-row">
           <button class="btn-ghost pressable" id="push-toggle" disabled>…</button>
           <button class="btn-ghost pressable" id="push-test">Test push</button>
+          <button class="btn-ghost pressable" id="withings-link">Link scale</button>
         </div>` : ''}
       </div>
       <div class="card">
@@ -1163,18 +1164,20 @@
       toast('Sync token saved');
     });
     if (s.settings.syncToken) {
-      const stEl = $('#sync-status'), tog = $('#push-toggle');
+      const stEl = $('#sync-status'), tog = $('#push-toggle'), wLink = $('#withings-link');
       (async () => {
         try {
-          const [, sub] = await Promise.all([Sync.status(), Sync.subscription()]);
-          stEl.textContent = `Connected · notifications ${sub ? 'on' : 'off'}`;
+          const [st, sub] = await Promise.all([Sync.status(), Sync.subscription()]);
+          stEl.textContent = `Connected · notifications ${sub ? 'on' : 'off'} · scale ${st.withings ? 'linked ✓' : 'not linked'}`;
           tog.textContent = sub ? 'Disable notifications' : 'Enable notifications';
           tog.dataset.on = sub ? '1' : '';
           tog.disabled = false;
+          if (st.withings) wLink.textContent = 'Re-link scale';
         } catch {
           stEl.textContent = 'Can’t reach the worker — check the token.';
         }
       })();
+      wLink.addEventListener('click', () => { window.open(Sync.withingsConnectUrl(), '_blank'); });
       tog.addEventListener('click', async () => {
         tog.disabled = true;
         try {
@@ -1248,9 +1251,13 @@
   Store.subscribe(() => Sync.scheduleStatePing()); // every save re-reports what's still open
   show('today');
   Sync.scheduleStatePing();
-  const pullSteps = () => Sync.pull().then((n) => {
-    if (n != null) { render(); toast(`Steps synced from your phone: ${n.toLocaleString()}`); }
+  const pullSync = () => Sync.pull().then((r) => {
+    if (!r || (r.steps == null && r.weight == null)) return;
+    render();
+    if (r.weight != null && r.steps != null) toast(`Synced: ${r.weight.toFixed(1)} lb · ${r.steps.toLocaleString()} steps`);
+    else if (r.weight != null) toast(`Scale synced: ${r.weight.toFixed(1)} lb`);
+    else toast(`Steps synced from your phone: ${r.steps.toLocaleString()}`);
   }).catch(() => {});
-  pullSteps();
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) pullSteps(); });
+  pullSync();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pullSync(); });
 })();
