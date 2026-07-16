@@ -34,7 +34,7 @@ const Store = (() => {
       ],
       rotation: { order: ['push', 'pull', 'legs'], nextIndex: 0 },
       sessions: [],                                   // { id, date, typeId, advanced }
-      bodyweight: [{ date: today, weight: 165, bodyFat: 18 }],
+      bodyweight: [], // no fabricated starting weigh-in — a fresh install has logged nothing (beta c03/c07)
       checkins: [],                                   // { date, sleptWell?, ateHealthy? }
       modes: [{ startDate: today, mode: 'cut' }],
       coach: { lastInsight: null, dismissedFlagOn: null },
