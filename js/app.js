@@ -30,6 +30,19 @@
     t.onclick = null;
   }
 
+  /* Destructive buttons: first tap arms, second tap within 2.6s confirms. */
+  function armToConfirm(btn, armedLabel, fn) {
+    let timer = null;
+    const orig = btn.textContent;
+    btn.addEventListener('click', () => {
+      if (btn.dataset.armed) { clearTimeout(timer); delete btn.dataset.armed; fn(); return; }
+      btn.dataset.armed = '1';
+      btn.textContent = armedLabel;
+      buzz(8);
+      timer = setTimeout(() => { delete btn.dataset.armed; btn.textContent = orig; }, 2600);
+    });
+  }
+
   /* ---------- bottom sheet ---------- */
   function openSheet(html) {
     $('#sheet').innerHTML = '<div class="grab"></div>' + html;
@@ -973,7 +986,7 @@
     Photos.renderGallery($('#photos-card'), render);
     $$('#trends-body [data-goal-open]').forEach((b) => b.addEventListener('click', () => openGoalSheet()));
     const gEnd = $('#trends-body [data-goal-end]');
-    if (gEnd) gEnd.addEventListener('click', () => { Plan.clearGoal(); buzz(10); render(); toast('Plan ended'); });
+    if (gEnd) armToConfirm(gEnd, 'Sure? Tap again to end', () => { Plan.clearGoal(); buzz(10); render(); toast('Plan ended'); });
     const strip = $('#mile-strip');
     if (strip) {
       const cur = strip.querySelector('.mile.cur');
@@ -1213,7 +1226,7 @@
         toast(editing ? 'Plan reset — the line restarts today' : 'Plan set — milestones live in Trends');
       });
       const end = $('#g-end');
-      if (end) end.addEventListener('click', () => { Plan.clearGoal(); closeSheet(); render(); toast('Plan ended'); });
+      if (end) armToConfirm(end, 'Sure? Tap again to end', () => { Plan.clearGoal(); closeSheet(); render(); toast('Plan ended'); });
     }
     paint(g0 && g0.mode === mode ? g0.target : defFor(type));
   }
