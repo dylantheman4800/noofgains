@@ -396,6 +396,7 @@
         ${slotBtn('am', '7am lift')}${slotBtn('pm', '7pm lift')}${slotBtn('off', 'Rest day')}
       </div>
       <div class="card">
+        <div class="card-label">Planned menu vs today's targets</div>
         <div class="macro-bar">
           <div class="track">
             <i class="p" style="width:${pct(totals.protein * 4, t.kcal)}%"></i>
@@ -928,7 +929,7 @@
           <div class="divider"></div>
           <div class="card-label">This week</div>
           <div class="rx"><span class="k">Sessions</span><span class="v${wkAdh.sessionsOK ? ' done' : ''}">${wkAdh.sessions} / ${wkAdh.goal}</span></div>
-          <div class="rx"><span class="k">Calories · protein</span><span class="v">${t.kcal.toLocaleString()} · ${t.protein}g</span></div>
+          <div class="rx"><span class="k">Daily target — calories · protein</span><span class="v">${t.kcal.toLocaleString()} · ${t.protein}g</span></div>
           <div class="rx"><span class="k">Slept well</span><span class="v${wkAdh.sleepYes >= 5 ? ' done' : ''}">${wkAdh.sleepYes} / 5+ nights</span></div>
           ${mode === 'cut' ? `<div class="rx"><span class="k">~8k steps</span><span class="v${wkAdh.stepsYes >= 5 ? ' done' : ''}">${wkAdh.stepsYes} / 5+ days</span></div>` : ''}
           ${adj ? `<div class="rx-note cal">Calories auto-tuned <b>${adj > 0 ? '+' : ''}${adj}</b> from baseline — weekly calibration against your real results.</div>` : ''}
