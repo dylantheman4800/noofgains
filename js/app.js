@@ -45,7 +45,8 @@
 
   /* ---------- bottom sheet ---------- */
   function openSheet(html) {
-    $('#sheet').innerHTML = '<div class="grab"></div>' + html;
+    $('#sheet').innerHTML = '<div class="grab"></div><button class="sheet-x pressable" aria-label="Close">✕</button>' + html;
+    $('#sheet .sheet-x').addEventListener('click', () => { buzz(6); closeSheet(); });
     $('#sheet').classList.add('open');
     $('#sheet-backdrop').classList.add('open');
   }
@@ -54,6 +55,7 @@
     $('#sheet-backdrop').classList.remove('open');
   }
   $('#sheet-backdrop').addEventListener('click', closeSheet);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
 
   /* ---------- router ---------- */
   let current = 'today';

@@ -674,6 +674,12 @@ button.food-item .pi-chev { flex-shrink: 0; }
 }
 #sheet.open { transform: none; }
 #sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--hairline-strong); margin: 0 auto 14px; }
+#sheet .sheet-x {
+  position: absolute; top: 10px; right: 12px;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--s3); border: 1px solid var(--hairline);
+  color: var(--ink-2); font-size: 13px; line-height: 1;
+}
 #sheet h3 { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
 
 .toast {
