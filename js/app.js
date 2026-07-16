@@ -426,23 +426,33 @@
       </div>`;
   };
 
-  const foodItems = (rec) => rec.items.map((x) => `
-      <div class="food-item">
+  /* Item rows. Editable rows are buttons (tap → edit sheet); read-only rows are divs. */
+  const foodItems = (rec, editable) => rec.items.map((x, i) => editable
+    ? `<button class="food-item pressable" data-fi="${i}" data-fdate="${rec.date}">
+        <div class="n">${esc(x.name)}<small>${esc(x.portion)}</small></div>
+        <div class="m">${x.kcal} cal · <b>${x.protein_g}g P</b></div>
+        <span class="pi-chev">›</span>
+      </button>`
+    : `<div class="food-item">
         <div class="n">${esc(x.name)}<small>${esc(x.portion)}</small></div>
         <div class="m">${x.kcal} cal · <b>${x.protein_g}g P</b></div>
       </div>`).join('');
 
-  /* Healthy chip shows the CURRENT answer (checkin wins over the parse). */
+  /* Healthy chip shows the CURRENT answer (checkin wins over the parse).
+     Hand-built days start unjudged (null) — neutral chip until he calls it. */
   const healthyNow = (rec) => {
     const c = Store.checkinOn(rec.date) || {};
-    return c.ateHealthy != null ? c.ateHealthy : rec.healthy;
+    if (c.ateHealthy != null) return c.ateHealthy;
+    return rec.healthy != null ? rec.healthy : null;
   };
   const hChip = (rec, tap) => {
     const h = healthyNow(rec);
-    const label = h ? 'Healthy day' : 'Off plan';
+    if (h == null && !tap) return '';
+    const cls = h == null ? '' : h ? 'yes' : 'no';
+    const label = h == null ? 'Healthy?' : h ? 'Healthy day' : 'Off plan';
     return tap
-      ? `<button class="h-chip ${h ? 'yes' : 'no'} pressable" data-hflip="${rec.date}">${label}</button>`
-      : `<span class="h-chip ${h ? 'yes' : 'no'}">${label}</span>`; // span — history rows are <button>s, no nesting
+      ? `<button class="h-chip ${cls} pressable" data-hflip="${rec.date}">${label}</button>`
+      : `<span class="h-chip ${cls}">${label}</span>`; // span — history rows are <button>s, no nesting
   };
 
   renderers.food = () => {
@@ -474,10 +484,14 @@
           </div>
           ${macroBar(rec.totals, t)}
           <div class="divider" style="margin:12px 0 2px"></div>
-          ${foodItems(rec)}
+          ${foodItems(rec, true)}
+          <div class="food-add">
+            <input type="search" id="food-search" placeholder="Add a food — search or type it" autocomplete="off" autocorrect="off">
+            <div id="food-results"></div>
+          </div>
           ${rec.note ? `<div class="food-note">${esc(rec.note)}</div>` : ''}
           <div class="pill-row">
-            <button class="btn-ghost small pressable" id="food-edit">Edit</button>
+            <button class="btn-ghost small pressable" id="food-edit">Re-dictate</button>
             <button class="btn-ghost small pressable" style="color:var(--bad);flex:0 0 auto" id="food-del">Remove</button>
           </div>
           <p class="tiny mt8">Estimates for habit coaching — your scale calibrates the real calorie math.${rec.costUsd != null ? ` · $${rec.costUsd.toFixed(2)}` : ''}</p>
@@ -492,6 +506,7 @@
             ${foodLive ? '<span class="spin"></span> Estimating…' : 'Log it'}
           </button>
           ${foodEditing && rec && !foodLive ? '<button class="btn-ghost pressable mt8" style="width:100%" id="food-cancel">Keep what I had</button>' : ''}
+          ${!rec && !foodLive ? '<div class="pill-row" style="justify-content:center"><button class="cu-link" id="food-manual">or build the list by hand →</button></div>' : ''}
         </div>`;
     }
 
@@ -510,7 +525,7 @@
               ${hChip(f, false)}
               <span class="pi-chev">${open ? '−' : '›'}</span>
             </button>
-            ${open ? `<div class="food-day-detail">${foodItems(f)}${f.note ? `<div class="food-note">${esc(f.note)}</div>` : ''}<div class="pill-row"><button class="cu-link" data-fdel="${f.date}">delete this day</button></div></div>` : ''}`;
+            ${open ? `<div class="food-day-detail">${foodItems(f, true)}${f.note ? `<div class="food-note">${esc(f.note)}</div>` : ''}<div class="pill-row"><button class="cu-link" data-fdel="${f.date}">delete this day</button></div></div>` : ''}`;
         }).join('') : '<p class="muted">Past days land here — calories, protein, and what you actually ate.</p>'}
       </div>`;
 
@@ -543,6 +558,53 @@
 
     const editBtn = $('#food-edit');
     if (editBtn) editBtn.addEventListener('click', () => { foodEditing = true; foodDraft = rec.raw; render(); });
+
+    /* Hand-built day: empty record, unjudged — the ateHealthy question stays open. */
+    const manualBtn = $('#food-manual');
+    if (manualBtn) manualBtn.addEventListener('click', () => {
+      Store.setFood(today, { date: today, raw: '', items: [], totals: Food.totalsOf([]), healthy: null, note: '', loggedAt: new Date().toISOString() });
+      foodEditing = false; foodDraft = '';
+      buzz(10);
+      render();
+      const fs2 = $('#food-search');
+      if (fs2) fs2.focus();
+    });
+
+    /* Tap an item (today or a past day) → edit sheet. */
+    $$('#food-body [data-fi]').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openFoodItemSheet(b.dataset.fdate, parseInt(b.dataset.fi, 10));
+    }));
+
+    /* Add-food search: local DOM only per keystroke — a full render() would eat the keyboard. */
+    const fs = $('#food-search');
+    if (fs) {
+      const box = $('#food-results');
+      fs.addEventListener('input', () => {
+        const q = fs.value.trim();
+        if (!q) { box.innerHTML = ''; return; }
+        const hits = Food.search(q);
+        box.innerHTML = hits.map((h, i) => `
+          <button class="food-hit pressable" data-hit="${i}">
+            <span class="n">${esc(h.name)}<small>${esc(h.portion)}</small></span>
+            <span class="m">${h.kcal} cal · <b>${h.protein_g}g P</b></span>
+          </button>`).join('') +
+          `<button class="food-hit manual pressable" data-hit-manual>Add “${esc(q)}” with your own numbers →</button>`;
+        box.querySelectorAll('[data-hit]').forEach((hb) => hb.addEventListener('click', () => {
+          const it = hits[parseInt(hb.dataset.hit, 10)];
+          Store.update((st) => {
+            const f = st.food.days.find((x) => x.date === today);
+            if (!f) return;
+            f.items.push({ ...it });
+            f.totals = Food.totalsOf(f.items);
+          });
+          buzz(12);
+          render();
+          toast(`${it.name} added`);
+        }));
+        box.querySelector('[data-hit-manual]').addEventListener('click', () => openFoodItemSheet(today, null, q));
+      });
+    }
     const cancelBtn = $('#food-cancel');
     if (cancelBtn) cancelBtn.addEventListener('click', () => { foodEditing = false; foodDraft = ''; render(); });
     const delBtn = $('#food-del');
@@ -580,6 +642,81 @@
       toast('Day deleted', () => Store.setFood(old.date, old));
     }));
   };
+
+  /* Edit/add one food item by hand. idx null = new item (name prefilled from the search box). */
+  function openFoodItemSheet(date, idx, prefillName) {
+    const rec = Store.foodOn(date);
+    if (!rec) return;
+    const adding = idx == null;
+    const it = adding
+      ? { name: prefillName || '', portion: '', kcal: '', protein_g: '', fat_g: '', carbs_g: '' }
+      : rec.items[idx];
+    if (!it) return;
+    openSheet(`
+      <h3>${adding ? 'Add food' : 'Edit food'}</h3>
+      <div class="set-li"><span>Food</span><input type="text" id="fi-name" value="${esc(it.name)}" placeholder="Chicken bowl"></div>
+      <div class="set-li"><span>Portion</span><input type="text" id="fi-portion" value="${esc(it.portion)}" placeholder="1 bowl"></div>
+      <div class="set-li"><span>Calories</span><input type="number" inputmode="numeric" id="fi-kcal" value="${it.kcal}" placeholder="—"></div>
+      <div class="set-li"><span>Protein (g)</span><input type="number" inputmode="numeric" id="fi-p" value="${it.protein_g}" placeholder="—"></div>
+      <div class="set-li"><span>Fat (g)</span><input type="number" inputmode="numeric" id="fi-f" value="${it.fat_g}" placeholder="—"></div>
+      <div class="set-li"><span>Carbs (g)</span><input type="number" inputmode="numeric" id="fi-c" value="${it.carbs_g}" placeholder="—"></div>
+      <button class="btn-volt pressable mt16" id="fi-save">${adding ? 'Add it' : 'Save'}</button>
+      ${adding ? '' : '<button class="btn-ghost pressable mt8" style="width:100%;color:var(--bad)" id="fi-del">Remove this item</button>'}
+    `);
+    const clamp = (id, max) => Math.max(0, Math.min(Math.round(parseFloat($(id).value) || 0), max));
+    $('#fi-save').addEventListener('click', () => {
+      const name = $('#fi-name').value.trim().slice(0, 80);
+      if (!name) { toast('Name the food first'); return; }
+      const next = {
+        name,
+        portion: $('#fi-portion').value.trim().slice(0, 80),
+        kcal: clamp('#fi-kcal', 5000),
+        protein_g: clamp('#fi-p', 400),
+        fat_g: clamp('#fi-f', 400),
+        carbs_g: clamp('#fi-c', 800),
+      };
+      Store.update((st) => {
+        const f = st.food.days.find((x) => x.date === date);
+        if (!f) return;
+        if (adding) f.items.push(next); else f.items[idx] = next;
+        f.totals = Food.totalsOf(f.items);
+      });
+      buzz(14);
+      closeSheet(); render();
+      toast(adding ? `${next.name} added` : 'Updated');
+    });
+    const del = $('#fi-del');
+    if (del) del.addEventListener('click', () => {
+      const wasLast = rec.items.length === 1;
+      const removed = rec.items[idx];
+      if (wasLast) {
+        /* Last item gone = day gone; the ateHealthy question reopens (mirrors Remove). */
+        const old = rec;
+        Store.deleteFood(date);
+        Store.setCheckin(date, 'ateHealthy', null);
+        closeSheet(); render();
+        toast('Log removed', () => { Store.setFood(old.date, old); Store.setCheckin(old.date, 'ateHealthy', old.healthy); render(); });
+      } else {
+        Store.update((st) => {
+          const f = st.food.days.find((x) => x.date === date);
+          if (!f) return;
+          f.items.splice(idx, 1);
+          f.totals = Food.totalsOf(f.items);
+        });
+        closeSheet(); render();
+        toast(`${removed.name} removed`, () => {
+          Store.update((st) => {
+            const f = st.food.days.find((x) => x.date === date);
+            if (!f) return;
+            f.items.splice(idx, 0, removed);
+            f.totals = Food.totalsOf(f.items);
+          });
+          render();
+        });
+      }
+      buzz(10);
+    });
+  }
 
   /* ================= HISTORY ================= */
 

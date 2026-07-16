@@ -55,6 +55,58 @@ const Food = (() => {
 
   const clampInt = (v, max) => Math.max(0, Math.min(Math.round(Number(v) || 0), max));
 
+  /* Totals are always re-derived from items — one rule for parses and hand edits. */
+  const totalsOf = (items) => items.reduce((t, x) => ({
+    kcal: t.kcal + x.kcal, protein_g: t.protein_g + x.protein_g,
+    fat_g: t.fat_g + x.fat_g, carbs_g: t.carbs_g + x.carbs_g,
+  }), { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0 });
+
+  /* ---------- add-food search: his own history first, staples as backfill ---------- */
+
+  /* Seed catalog for Dylan's actual food world — history entries shadow these
+     (same name = his logged macros win). Estimates, same as the parser's. */
+  const STAPLES = [
+    { name: 'David protein bar', portion: '1 bar', kcal: 150, protein_g: 28, fat_g: 2, carbs_g: 26 },
+    { name: 'Fairlife protein shake', portion: '1 bottle', kcal: 150, protein_g: 30, fat_g: 3, carbs_g: 4 },
+    { name: 'Protein yogurt', portion: '1 container (~150g)', kcal: 150, protein_g: 15, fat_g: 3, carbs_g: 9 },
+    { name: 'Whey protein shake', portion: '1 scoop', kcal: 130, protein_g: 25, fat_g: 2, carbs_g: 3 },
+    { name: 'Eggs', portion: '2 eggs', kcal: 140, protein_g: 12, fat_g: 10, carbs_g: 1 },
+    { name: 'Chicken breast', portion: '6 oz cooked', kcal: 280, protein_g: 52, fat_g: 6, carbs_g: 0 },
+    { name: 'Salmon', portion: '6 oz', kcal: 350, protein_g: 34, fat_g: 22, carbs_g: 0 },
+    { name: 'Steak', portion: '6 oz', kcal: 400, protein_g: 46, fat_g: 22, carbs_g: 0 },
+    { name: 'White rice', portion: '1 cup cooked', kcal: 205, protein_g: 4, fat_g: 0, carbs_g: 45 },
+    { name: 'Banana', portion: '1 medium', kcal: 105, protein_g: 1, fat_g: 0, carbs_g: 27 },
+    { name: 'Apple', portion: '1 medium', kcal: 95, protein_g: 0, fat_g: 0, carbs_g: 25 },
+    { name: 'Cava bowl', portion: 'full bowl', kcal: 800, protein_g: 45, fat_g: 35, carbs_g: 70 },
+    { name: 'Chipotle chicken bowl', portion: 'full bowl', kcal: 900, protein_g: 50, fat_g: 35, carbs_g: 85 },
+    { name: 'Sweetgreen salad', portion: '1 salad', kcal: 550, protein_g: 30, fat_g: 30, carbs_g: 45 },
+    { name: 'Just Salad bowl', portion: '1 bowl', kcal: 600, protein_g: 35, fat_g: 30, carbs_g: 50 },
+  ];
+
+  const bareItem = (x) => ({ name: x.name, portion: x.portion, kcal: x.kcal, protein_g: x.protein_g, fat_g: x.fat_g, carbs_g: x.carbs_g });
+
+  function search(q) {
+    q = String(q || '').trim().toLowerCase();
+    if (!q) return [];
+    const seen = new Map(); // lower-cased name → {item, count, last}
+    for (const d of Store.get().food.days) {
+      for (const it of d.items || []) {
+        const k = it.name.toLowerCase();
+        const e = seen.get(k);
+        if (e) { e.count++; if (d.date >= e.last) { e.last = d.date; e.item = it; } }
+        else seen.set(k, { item: it, count: 1, last: d.date });
+      }
+    }
+    const hits = [];
+    for (const [k, e] of seen) if (k.includes(q)) hits.push(e);
+    hits.sort((a, b) => (b.count - a.count) || b.last.localeCompare(a.last));
+    const out = hits.map((e) => bareItem(e.item));
+    for (const st of STAPLES) {
+      if (st.name.toLowerCase().includes(q) && !seen.has(st.name.toLowerCase())) out.push(bareItem(st));
+    }
+    return out.slice(0, 6);
+  }
+
   function sanitize(p) {
     const item = (x) => ({
       name: String(x.name || '').slice(0, 80),
@@ -67,11 +119,7 @@ const Food = (() => {
     const items = (Array.isArray(p.items) ? p.items : []).slice(0, 30).map(item);
     if (!items.length) throw new Error('No food found in that — try again with what you ate.');
     // Totals re-derived from items — the model's own sum can drift.
-    const totals = items.reduce((t, x) => ({
-      kcal: t.kcal + x.kcal, protein_g: t.protein_g + x.protein_g,
-      fat_g: t.fat_g + x.fat_g, carbs_g: t.carbs_g + x.carbs_g,
-    }), { kcal: 0, protein_g: 0, fat_g: 0, carbs_g: 0 });
-    return { items, totals, healthy: !!p.healthy, note: String(p.note || '').slice(0, 200) };
+    return { items, totals: totalsOf(items), healthy: !!p.healthy, note: String(p.note || '').slice(0, 200) };
   }
 
   /* One structured-output call. Non-streaming — no thinking, small response,
@@ -138,5 +186,5 @@ const Food = (() => {
     return rec;
   }
 
-  return { log };
+  return { log, search, totalsOf };
 })();
