@@ -56,7 +56,7 @@
   function render() { renderers[current](); }
   $$('.tab').forEach((t) => t.addEventListener('click', () => { buzz(6); show(t.dataset.view); }));
 
-  const partOfDay = () => { const h = new Date().getHours(); return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening'; };
+  const partOfDay = () => { const h = new Date().getHours(); return h < 5 ? 'evening' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening'; };
 
   /* ================= TODAY ================= */
 
@@ -64,9 +64,10 @@
     const s = Store.get();
     const today = Store.todayStr();
     const now = new Date();
-    const greet = { morning: 'Morning, Noof', afternoon: 'Afternoon, Noof', evening: 'Evening, Noof' }[partOfDay()];
-    const bday = today.slice(5) === '09-23';
-    $('#today-greeting').textContent = bday ? 'Happy birthday, Noof 🎂' : greet;
+    const name = (s.settings.profile && s.settings.profile.name) || 'Noof';
+    const greet = { morning: `Morning, ${name}`, afternoon: `Afternoon, ${name}`, evening: `Evening, ${name}` }[partOfDay()];
+    const bday = today.slice(5) === ((s.settings.profile && s.settings.profile.birthdate) || '2000-09-23').slice(5);
+    $('#today-greeting').textContent = bday ? `Happy birthday, ${name} 🎂` : greet;
     $('#today-date').textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
     const nextId = Store.nextUpTypeId();
@@ -1402,5 +1403,9 @@
     else toast(`Steps synced from your phone: ${r.steps.toLocaleString()}`);
   }).catch(() => {});
   pullSync();
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) pullSync(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    render(); // resume after hours away: greeting, date, and today-state must not be stale
+    pullSync();
+  });
 })();
