@@ -22,7 +22,13 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(hideToast, undoFn ? 4200 : 2200);
   }
-  function hideToast() { $('#toast').classList.remove('show'); }
+  function hideToast() {
+    const t = $('#toast');
+    t.classList.remove('show');
+    // Disarm: a faded toast must not keep intercepting taps or holding a stale undo.
+    t.style.pointerEvents = 'none';
+    t.onclick = null;
+  }
 
   /* ---------- bottom sheet ---------- */
   function openSheet(html) {
