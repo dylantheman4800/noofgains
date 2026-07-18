@@ -11,6 +11,12 @@
 
   const buzz = (ms = 12) => { if (navigator.vibrate) navigator.vibrate(ms); };
 
+  /* Prefilled stepper inputs (goal target, weigh-in, steps): focusing selects the
+     value so typing replaces it — appending to "158.0" silently kept the default. */
+  document.addEventListener('focusin', (e) => {
+    if (e.target.matches('.stepper input.val')) e.target.select();
+  });
+
   /* ---------- toast (with optional undo) ---------- */
   let toastTimer = null;
   function toast(msg, undoFn) {
@@ -261,7 +267,7 @@
       </div>`;
 
     const paceChip = pc
-      ? `<span class="plan-pace ${pc.behindLb <= 0.05 ? 'ahead' : 'behind'}">${Math.abs(pc.behindLb) < 0.05 ? 'on plan' : `${Math.abs(pc.behindLb).toFixed(1)} lb ${pc.behindLb < 0 ? 'ahead' : 'behind'}`}</span>`
+      ? `<button class="plan-pace ${pc.behindLb <= 0.05 ? 'ahead' : 'behind'} pressable" data-pace-go>${Math.abs(pc.behindLb) < 0.05 ? 'on plan' : `${Math.abs(pc.behindLb).toFixed(1)} lb ${pc.behindLb < 0 ? 'ahead' : 'behind'}`}</button>`
       : '';
     const planCard = `<div class="card">
         <div class="plan-head"><div class="card-label" style="margin:0">Today’s plan</div>${paceChip}</div>
@@ -283,6 +289,8 @@
     }));
     const moreBtn = $('#today-cards [data-more-types]');
     if (moreBtn) moreBtn.addEventListener('click', () => openDaySheet(today));
+    const paceGo = $('#today-cards [data-pace-go]');
+    if (paceGo) paceGo.addEventListener('click', () => { buzz(6); show('trends'); }); // the chip explains itself where the plan card lives
     const dismiss = $('#today-cards [data-dismiss-flag]');
     if (dismiss) dismiss.addEventListener('click', () => { Store.update((st) => { st.coach.dismissedFlagOn = today; }); render(); });
     const gsBtn = $('#today-cards [data-goal-setup]');
@@ -1152,7 +1160,7 @@
   /* ---------- goal sheet (set / edit / end the plan) ---------- */
   function openGoalSheet() {
     const g0 = Plan.goal();
-    const mode = Store.currentMode();
+    let mode = Store.currentMode(); // local until save — browsing modes records no phase
     const curAvg = Store.rolling7Avg(Store.todayStr()) || (Store.lastWeight() || { weight: 165 }).weight;
     const curBf = Plan.latestBf();
     const editing = !!g0;
@@ -1169,14 +1177,18 @@
       if (ty === 'weight' && (v < 80 || v > 400)) return 'That’s not a target weight';
       if (ty === 'bf' && (v < 4 || v > 50)) return 'Keep body fat between 4 and 50%';
       const t = targetLb(ty, v);
-      if (mode === 'cut' && t >= curAvg - 0.4) return `Cutting — target must be below your ${curAvg.toFixed(1)} lb average`;
-      if (mode === 'bulk' && t <= curAvg + 0.4) return `Bulking — target must be above your ${curAvg.toFixed(1)} lb average`;
+      if (mode === 'cut' && t >= curAvg - 0.4) return `Cutting — target must be below your ${curAvg.toFixed(1)} lb average. Gaining? Switch to Bulk above`;
+      if (mode === 'bulk' && t <= curAvg + 0.4) return `Bulking — target must be above your ${curAvg.toFixed(1)} lb average. Losing? Switch to Cut above`;
       return null;
     };
 
     function paint(val) {
       openSheet(`
         <h3>${editing ? 'Edit goal' : 'Set your goal'}</h3>
+        <div class="mode-seg" style="margin-bottom:10px">
+          <button class="pressable ${mode === 'cut' ? 'active' : ''}" data-gmode="cut">Cut — lose</button>
+          <button class="pressable ${mode === 'bulk' ? 'active' : ''}" data-gmode="bulk">Bulk — gain</button>
+        </div>
         <div class="mode-seg" style="margin-bottom:14px">
           <button class="pressable ${type === 'weight' ? 'active' : ''}" data-gt="weight">Target weight</button>
           <button class="pressable ${type === 'bf' ? 'active' : ''}" data-gt="bf" ${curBf == null ? 'disabled style="opacity:.4"' : ''}>Target body fat</button>
@@ -1205,6 +1217,12 @@
         $('#g-preview').innerHTML = `${rate > 0 ? '+' : '−'}${Math.abs(rate).toFixed(1)} lb/wk — my prescription · ~${Math.ceil(wks)} wk${Math.ceil(wks) === 1 ? '' : 's'} · lands <b style="color:var(--ink)">${lands}</b>${type === 'bf' ? ` · ≈${t.toFixed(1)} lb` : ''}`;
       };
       refresh();
+      $$('#sheet [data-gmode]').forEach((b) => b.addEventListener('click', () => {
+        if (b.dataset.gmode === mode) return;
+        mode = b.dataset.gmode;
+        buzz(8);
+        paint(g0 && g0.mode === mode && g0.type === type ? g0.target : defFor(type));
+      }));
       $$('#sheet [data-gt]').forEach((b) => b.addEventListener('click', () => {
         if (b.disabled || b.dataset.gt === type) return;
         type = b.dataset.gt;
@@ -1222,6 +1240,7 @@
         const v = parseFloat($('#g-val').value);
         const bad = problem(type, v);
         if (bad) { toast(bad); return; }
+        if (mode !== Store.currentMode()) Store.setMode(mode); // setGoal stamps the goal with currentMode
         Plan.setGoal(type, Math.round(v * 10) / 10);
         buzz(18);
         closeSheet();
@@ -1313,6 +1332,13 @@
         <input type="file" id="import-file" accept="application/json" class="hidden">
       </div>
       <div class="card">
+        <div class="card-label">Danger zone</div>
+        <p class="muted">Erase everything on this phone — sessions, weigh-ins, food, photos, settings. Export a backup first; there is no undo.</p>
+        <div class="pill-row">
+          <button class="btn-ghost pressable" style="color:var(--bad)" id="wipe-all">Erase all data</button>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-label">About</div>
         <p class="muted">NoofGains v1 — built for exactly one user. LFG.</p>
       </div>`;
@@ -1377,14 +1403,30 @@
       const fname = `noofgains-backup-${Store.todayStr()}.json`;
       const file = new File([json], fname, { type: 'application/json' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: 'NoofGains backup' }); render(); return; } catch { /* fall through */ }
+        try {
+          await navigator.share({ files: [file], title: 'NoofGains backup' });
+          Store.markBackedUp();
+          render();
+          toast('Backup shared — stash it somewhere safe');
+          return;
+        } catch (err) {
+          if (err && err.name === 'AbortError') return; // canceled the share sheet — nothing was backed up
+          /* share genuinely failed — fall through to a plain download */
+        }
       }
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
       a.download = fname;
       a.click();
       URL.revokeObjectURL(a.href);
+      Store.markBackedUp();
       render();
+      toast(`Saved ${fname}`);
+    });
+    armToConfirm($('#wipe-all'), 'Sure? Tap again to erase', () => {
+      localStorage.removeItem('noofgains.v1');
+      try { indexedDB.deleteDatabase('noofgains-photos'); } catch { /* no vault — fine */ }
+      location.reload(); // boots fresh from seed()
     });
     $('#do-import').addEventListener('click', () => $('#import-file').click());
     $('#import-file').addEventListener('change', async (e) => {

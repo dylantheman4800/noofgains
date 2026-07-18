@@ -216,10 +216,15 @@ const Store = (() => {
 
   /* ---------- backup ---------- */
 
+  /* Stamping is the caller's job AFTER the share/download actually happens —
+     a canceled share sheet must not flip the "backed up" state. */
   function exportJSON() {
+    return JSON.stringify(state, null, 2);
+  }
+
+  function markBackedUp() {
     state.settings.lastBackupAt = todayStr();
     save();
-    return JSON.stringify(state, null, 2);
   }
 
   function importJSON(text) {
@@ -244,6 +249,6 @@ const Store = (() => {
     get: () => state,
     todayStr, uid, typeById, nextUpTypeId, logSession, removeSession, sessionsOn,
     weekBounds, weekStats, setBodyweight, removeBodyweight, lastWeight, rolling7Avg,
-    checkinOn, setCheckin, foodOn, setFood, deleteFood, currentMode, setMode, exportJSON, importJSON, update, subscribe,
+    checkinOn, setCheckin, foodOn, setFood, deleteFood, currentMode, setMode, exportJSON, markBackedUp, importJSON, update, subscribe,
   };
 })();

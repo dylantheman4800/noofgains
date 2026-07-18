@@ -68,16 +68,28 @@ const Coach = (() => {
     const avgNow = Store.rolling7Avg(today);
     const avgThen = Store.rolling7Avg(daysAgo(14));
     if (avgNow != null && avgThen != null && s.bodyweight.length >= 4) {
-      const rate = ((avgNow - avgThen) / 2).toFixed(1); // lb per week
+      const rate = (avgNow - avgThen) / 2; // lb per week, signed
       const mode = Store.currentMode();
+      const g = Plan.goal();
+      // With an active plan, "on pace" means the PLAN's prescribed rate — one
+      // verdict source, so this can never contradict the plan card in Trends.
+      const planRate = g && g.mode === mode ? Plan.weeklyRateLb() : null;
       const dir = rate > 0 ? '+' : '';
       let verdict;
       if (mode === 'cut') {
-        verdict = rate <= -0.5 ? 'On pace.' : rate < 0 ? 'Moving, but slowly — tighten the Tue/Thu dinners.' : 'Not a cut yet. The scale doesn’t negotiate.';
+        if (planRate != null) {
+          verdict = rate <= planRate + 0.15 ? `On pace with your plan’s ${planRate.toFixed(1)} lb/wk.`
+            : rate < 0 ? `Losing, but slower than your plan’s ${planRate.toFixed(1)} lb/wk.`
+            : 'Not a cut yet. The scale doesn’t negotiate.';
+        } else {
+          verdict = rate <= -0.5 ? 'On pace.' : rate < 0 ? 'Moving, but slowly — tighten the Tue/Thu dinners.' : 'Not a cut yet. The scale doesn’t negotiate.';
+        }
+      } else if (planRate != null) {
+        verdict = rate >= planRate - 0.1 ? `Gaining on your plan’s +${planRate.toFixed(1)} lb/wk.` : `Under your plan’s +${planRate.toFixed(1)} lb/wk — bulk means eating.`;
       } else {
         verdict = rate >= 0.25 ? 'Gaining on schedule.' : 'Bulk means eating — add the carbs.';
       }
-      out.push({ text: `Trending <b>${dir}${rate} lb/week</b> (7-day avg). ${verdict}` });
+      out.push({ text: `Trending <b>${dir}${rate.toFixed(1)} lb/week</b> (7-day avg). ${verdict}` });
     }
 
     // Sleep → training correlation
