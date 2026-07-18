@@ -229,7 +229,7 @@
         <div class="cu-check"><svg viewBox="0 0 24 24" fill="none" stroke="var(--volt)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5 10 18.5 20 6"/></svg></div>
         <div>
           <div class="cu-title">All caught up</div>
-          <div class="cu-sub">${loggedToday ? `<button class="cu-link" data-edit-weight>Weight ${loggedToday.weight.toFixed(1)} lb</button> · ` : ''}${cToday.steps != null ? `${cToday.steps.toLocaleString()} steps · ` : ''}<button class="cu-link" data-edit-today>Edit today</button></div>
+          <div class="cu-sub">${loggedToday ? `<button class="cu-link" data-edit-weight>Weight ${loggedToday.weight.toFixed(1)} lb</button> · ` : ''}<button class="cu-link" data-edit-today>Edit today</button></div>
         </div>
       </div>`;
 
@@ -262,13 +262,33 @@
       ? `<div class="card goal-strip pressable" data-strip-go>${gsStats.join('<div class="gs-div"></div>')}</div>`
       : '';
 
+    /* today's numbers — passive readouts, never questions: steps fill in from
+       the phone via Withings; fuel is the day's prescription (weekday-aware) */
+    const fp = Fuel.plan(today);
+    const stepsN = cToday.steps;
+    const stepsFrac = stepsN != null ? Math.min(stepsN / Plan.stepsTarget, 1) : 0;
+    const todayLine = `<div class="card today-line">
+        <div class="card-label">Today’s numbers</div>
+        <div class="tl-row">
+          <span class="tl-k">Steps</span>
+          <span class="tl-v">${stepsN != null
+            ? `${stepsN.toLocaleString()} <span class="tl-sub">/ ${Plan.stepsTarget / 1000}k</span>`
+            : cToday.hitSteps === true ? 'target hit' : '<span class="tl-sub">sync from your phone</span>'}</span>
+        </div>
+        ${stepsN != null ? `<div class="tl-track"><div class="tl-fill${stepsN >= Plan.stepsTarget ? ' hit' : ''}" style="width:${Math.round(stepsFrac * 100)}%"></div></div>` : ''}
+        <div class="tl-row pressable" data-fuel-go>
+          <span class="tl-k">Fuel</span>
+          <span class="tl-v">~${fp.targets.kcal.toLocaleString()} kcal · ${fp.targets.protein}g P <span class="tl-sub">· ${esc(fp.kindLabel)} ›</span></span>
+        </div>
+      </div>`;
+
     /* pace chip retired from the plan head — the goal strip above owns pace now */
     const planCard = `<div class="card">
         <div class="plan-head"><div class="card-label" style="margin:0">Today’s plan</div></div>
         <div class="plan-items">${rows || caughtUp}</div>
       </div>`;
 
-    $('#today-cards').innerHTML = [hero, nudgeCard, flagCard, goalStrip, planCard, ring].join('');
+    $('#today-cards').innerHTML = [hero, nudgeCard, flagCard, goalStrip, todayLine, planCard, ring].join('');
 
     /* wire */
     $$('#today-cards [data-log]').forEach((b) => b.addEventListener('click', () => {
@@ -285,6 +305,8 @@
     if (moreBtn) moreBtn.addEventListener('click', () => openDaySheet(today));
     const stripGo = $('#today-cards [data-strip-go]');
     if (stripGo) stripGo.addEventListener('click', () => { buzz(6); show('trends'); }); // full milestone story lives in Trends
+    const fuelGo = $('#today-cards [data-fuel-go]');
+    if (fuelGo) fuelGo.addEventListener('click', () => { buzz(6); show('fuel'); });
     const nudgeGo = $('#today-cards [data-nudge-go]');
     if (nudgeGo) nudgeGo.addEventListener('click', () => { buzz(6); show(nudgeGo.dataset.nudgeGo); });
     const dismiss = $('#today-cards [data-dismiss-flag]');
