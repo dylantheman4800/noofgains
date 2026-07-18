@@ -96,7 +96,6 @@
     const doneToday = Store.sessionsOn(today);
     const week = Store.weekStats();
     const flag = Coach.recoveryFlag();
-    const morning = partOfDay() === 'morning';
 
     /* hero */
     const others = s.types.filter((t) => t.id !== nextId);
@@ -163,37 +162,18 @@
         </div>
       </div>`;
 
-    /* ----- Today's plan: outstanding items only — answered → gone ----- */
+    /* ----- Today's plan: outstanding items only — answered → gone -----
+       The weigh-in row is renderer-filtered, not engine-removed (July 2026,
+       Dylan: "that comes from the Withings app"): the scale auto-logs it, so
+       the page never asks — but todayItems still reports it, so the 9pm push
+       still chases a day he forgot to step on. Manual fallback lives in the
+       day sheet (Edit today). */
     const gl = Plan.goal();
     const pc = gl && Plan.modeOk() ? Plan.pace() : null;
-    const items = Plan.todayItems(today);
+    const items = Plan.todayItems(today).filter((it) => it.id !== 'weigh');
 
     const last = Store.lastWeight();
-    const startW = last ? last.weight : 165;
     const avg = Store.rolling7Avg(today);
-
-    const weighOpen = morning || items.length === 1; // sole item left: open it
-    const weighExpand = `
-      <div class="pi-expand${weighOpen ? ' open' : ''}" id="weigh-expand">
-        <div class="weigh-row">
-          <div class="stepper">
-            <button class="pressable" data-step="-0.5">−</button>
-            <input class="val" id="w-val" type="text" inputmode="decimal" value="${startW.toFixed(1)}">
-            <button class="pressable" data-step="0.5">+</button>
-          </div>
-          <span class="unit-tag">lb</span>
-        </div>
-        <button class="bf-toggle" id="bf-toggle">+ body fat %</button>
-        <div class="bf-row" id="bf-row">
-          <div class="stepper">
-            <button class="pressable" data-bfstep="-0.5">−</button>
-            <input class="val" id="bf-val" type="text" inputmode="decimal" value="${(last && last.bodyFat != null ? last.bodyFat : 18).toFixed(1)}">
-            <button class="pressable" data-bfstep="0.5">+</button>
-          </div>
-          <span class="unit-tag">%</span>
-        </div>
-        <button class="btn-ghost pressable mt12" style="width:100%" id="w-save">Save</button>
-      </div>`;
 
     const rows = items.map((it) => {
       if (it.id === 'goal') return `
@@ -202,12 +182,6 @@
           <div class="pi-body"><div class="pi-label">Set your goal</div><div class="pi-sub">Pick the target — I’ll build the week-by-week plan</div></div>
           <span class="pi-chev">›</span>
         </button>`;
-      if (it.id === 'weigh') return `
-        <button class="plan-item pressable" data-weigh-toggle>
-          <span class="pi-dot"></span>
-          <div class="pi-body"><div class="pi-label">Morning weigh-in</div><div class="pi-sub">${avg != null ? `7-day avg ${avg.toFixed(1)} lb` : 'First entry sets the baseline'}</div></div>
-          <span class="pi-chev" id="weigh-chev">${weighOpen ? '−' : '›'}</span>
-        </button>${weighExpand}`;
       if (it.id === 'train') return `
         <div class="plan-item needed">
           <span class="pi-dot"></span>
@@ -313,36 +287,6 @@
     if (dismiss) dismiss.addEventListener('click', () => { Store.update((st) => { st.coach.dismissedFlagOn = today; }); render(); });
     const gsBtn = $('#today-cards [data-goal-setup]');
     if (gsBtn) gsBtn.addEventListener('click', () => openGoalSheet());
-    const wtog = $('#today-cards [data-weigh-toggle]');
-    if (wtog) wtog.addEventListener('click', () => {
-      const ex = $('#weigh-expand');
-      ex.classList.toggle('open');
-      $('#weigh-chev').textContent = ex.classList.contains('open') ? '−' : '›';
-      buzz(6);
-    });
-    const wval = $('#w-val');
-    if (wval) {
-      $$('#today-cards [data-step]').forEach((b) => b.addEventListener('click', () => {
-        wval.value = (parseFloat(wval.value || startW) + parseFloat(b.dataset.step)).toFixed(1);
-        buzz(6);
-      }));
-      const bfval = $('#bf-val');
-      $$('#today-cards [data-bfstep]').forEach((b) => b.addEventListener('click', () => {
-        bfval.value = (parseFloat(bfval.value || 18) + parseFloat(b.dataset.bfstep)).toFixed(1);
-        buzz(6);
-      }));
-      $('#bf-toggle').addEventListener('click', () => $('#bf-row').classList.toggle('open'));
-      $('#w-save').addEventListener('click', () => {
-        const w = parseFloat(wval.value);
-        if (!isFinite(w) || w < 60 || w > 500) { toast('That’s not a body weight, Noof'); return; }
-        const bfOpen = $('#bf-row').classList.contains('open');
-        const bf = bfOpen ? parseFloat($('#bf-val').value) : undefined;
-        Store.setBodyweight(today, w, isFinite(bf) ? bf : undefined);
-        buzz(18);
-        render();
-        toast('Weight saved', () => Store.removeBodyweight(today));
-      });
-    }
     const editT = $('#today-cards [data-edit-today]');
     if (editT) editT.addEventListener('click', () => openDaySheet(today));
     const editW = $('#today-cards [data-edit-weight]');
