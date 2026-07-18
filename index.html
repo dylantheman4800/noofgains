@@ -120,7 +120,11 @@
   <script src="js/app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+      // The ?v= query is bumped every release: a fresh URL sidesteps the
+      // 10-minute HTTP cache GitHub Pages puts on sw.js (iOS honors it and
+      // update checks silently no-op — the "I swiped 20 times" bug).
+      // It's also the app's visible build tag (More tab reads it).
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js?v=29', { updateViaCache: 'none' }));
     }
   </script>
 </body>

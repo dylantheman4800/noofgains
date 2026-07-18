@@ -1275,7 +1275,18 @@
       <div class="card">
         <div class="card-label">About</div>
         <p class="muted">NoofGains v1 — built for exactly one user. LFG.</p>
+        <p class="tiny mt8" id="build-tag">Build: checking…</p>
       </div>`;
+
+    /* Build tag = the ?v= on the active service worker's script URL — the one
+       source of truth for which release this install is actually running. */
+    const bt = $('#build-tag');
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      const m = navigator.serviceWorker.controller.scriptURL.match(/[?&]v=(\w+)/);
+      bt.textContent = `Build: ${m ? 'v' + m[1] : 'pre-v29 (update pending)'}`;
+    } else {
+      bt.textContent = 'Build: no service worker (browser tab?)';
+    }
 
     $('#more-goal').addEventListener('click', () => openGoalSheet());
     $('#sync-save').addEventListener('click', () => {
