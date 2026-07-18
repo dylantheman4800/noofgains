@@ -58,11 +58,13 @@ const Sync = (() => {
     const today = Store.todayStr();
     const { steps, weights } = await api('/pull');
     let stepsApplied = null;
+    let stepsDays = 0; // past-day backfills count too — the app announces them
     for (const [date, n] of Object.entries(steps || {})) {
       if (date > today || !isFinite(n)) continue;
       const c = Store.checkinOn(date) || {};
       if (c.steps === n) continue; // already applied
       Store.setCheckin(date, 'steps', n);
+      stepsDays++;
       const hit = n >= Plan.stepsTarget;
       if (date < today || hit || new Date().getHours() >= 21) {
         Store.setCheckin(date, 'hitSteps', hit);
@@ -70,15 +72,17 @@ const Sync = (() => {
       if (date === today) stepsApplied = n;
     }
     let weightApplied = null;
+    let weightDays = 0;
     for (const [date, w] of Object.entries(weights || {})) {
       if (date > today || !w || !isFinite(w.lb)) continue;
       const cur = Store.get().bodyweight.find((b) => b.date === date);
       const fat = w.fat != null ? w.fat : (cur ? cur.bodyFat : undefined); // never erase a known fat%
       if (cur && cur.weight === w.lb && (cur.bodyFat != null ? cur.bodyFat : null) === (fat != null ? fat : null)) continue;
       Store.setBodyweight(date, w.lb, fat);
+      weightDays++;
       if (date === today) weightApplied = w.lb;
     }
-    return { steps: stepsApplied, weight: weightApplied };
+    return { steps: stepsApplied, weight: weightApplied, stepsDays, weightDays };
   }
 
   /* ---------- push subscription ---------- */

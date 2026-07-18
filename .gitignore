@@ -1,3 +1,4 @@
 secrets.local.json
 apple_health_export/
 export.zip
+.claude/settings.local.json

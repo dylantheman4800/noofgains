@@ -266,9 +266,11 @@ const Plan = (() => {
     if (remaining > 0 && remaining >= daysLeft && !trainedToday) {
       items.push({ id: 'train', remaining, daysLeft });
     }
-    if (c.sleptWell == null) items.push({ id: 'sleep', field: 'sleptWell' });
-    if (c.ateHealthy == null) items.push({ id: 'food', field: 'ateHealthy' });
-    if (Store.currentMode(date) === 'cut' && c.hitSteps == null) items.push({ id: 'steps', field: 'hitSteps' });
+    /* Sleep/food/steps questions retired from Today (July 2026, Dylan's call):
+       steps auto-answer from Withings, food auto-answers from the Food tab
+       parse, and he edits any day directly in History. Data still flows —
+       the app just stopped interrogating. (This also quiets the 9pm push
+       about them: it now only chases the weigh-in on an otherwise-live day.) */
     if (photoDue(date)) items.push({ id: 'photo' });
     return items;
   }

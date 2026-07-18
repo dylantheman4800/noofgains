@@ -223,6 +223,27 @@ input::placeholder { color: var(--ink-3); }
 .volt-flash { animation: voltFlash 0.55s var(--ease); }
 @keyframes voltFlash { 0% { box-shadow: 0 0 0 0 var(--volt-glow) inset; } 30% { box-shadow: 0 0 60px 6px var(--volt-glow) inset; } 100% { box-shadow: 0 0 0 0 transparent inset; } }
 
+/* ---------- coach nudge + goal strip (Today) ---------- */
+
+.nudge-card { border-left: 2px solid var(--volt); }
+.nudge-card p { font-size: 14.5px; font-weight: 500; line-height: 1.45; color: var(--ink); margin: 0; }
+
+.goal-strip { display: flex; align-items: stretch; gap: 14px; }
+.gs-stat { flex: 1; min-width: 0; }
+.gs-div { width: 1px; background: var(--hairline); flex-shrink: 0; }
+.gs-label {
+  font-size: 10.5px; font-weight: 500; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--ink-3); margin-bottom: 4px;
+}
+.gs-num { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.gs-num span { font-size: 12px; font-weight: 500; color: var(--ink-2); margin-left: 2px; }
+.gs-num.small { font-size: 15px; line-height: 22px; padding-top: 3px; }
+.gs-num.good { color: var(--good); }
+.gs-num.bad { color: var(--bad); }
+.gs-delta { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-delta.good { color: var(--good); }
+.gs-delta.bad { color: var(--bad); }
+
 /* ---------- weekly ring ---------- */
 
 .ring-card { display: flex; align-items: center; gap: 18px; }

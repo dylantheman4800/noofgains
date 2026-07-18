@@ -8,9 +8,10 @@
    Routes (all require Authorization: Bearer <AUTH>):
      POST   /state      {date, missing:[...]} — app reports which DATA items are
                         still unanswered for the day (weigh-in/sleep/food/steps)
-     POST   /steps      {date?, steps} — iOS Shortcuts posts the day's step count
+     POST   /steps      {date?, steps} — manual escape hatch (was: iOS Shortcuts;
+                        steps now come from Withings phone tracking, see below)
      GET    /pull       → {steps:{date:count}, weights:{date:{lb,fat}}}, app
-                        applies on open; freshens from Withings first
+                        applies on open; freshens weights + steps from Withings first
      POST   /subscribe  body = PushSubscription JSON from the app
      DELETE /subscribe
      GET    /status     → debug/UI: {sub, state, steps, withings} for today
@@ -230,6 +231,32 @@ async function fetchWeights(env) {
   return { connected: true, applied };
 }
 
+/* Steps from Withings phone tracking (replaced the flaky 8:45pm Shortcut,
+   which never made sense anyway — it snapshotted a day that ends at 11:59).
+   Rolling 7-day window every freshen: rows carry their own local date,
+   revisions simply overwrite, so a day's FINAL count lands on the first
+   fetch after midnight and the app self-corrects. Zero-step rows are
+   skipped — a phone in use never counts 0, but a half-set-up tracker does,
+   and a 0 must not clobber a real count. Needs the user.activity scope. */
+async function fetchActivity(env) {
+  const access = await withingsAccess(env);
+  if (!access) return { connected: false };
+  const b = await withingsPost('/v2/measure', {
+    action: 'getactivity',
+    startdateymd: nyParts(new Date(Date.now() - 6 * 86400 * 1000)).date,
+    enddateymd: nyParts().date,
+    data_fields: 'steps',
+  }, access);
+  let applied = 0;
+  for (const a of b.activities || []) {
+    const n = Math.round(a.steps);
+    if (!isFinite(n) || n <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(a.date)) continue;
+    await env.KV.put(`steps:${a.date}`, String(n), { expirationTtl: 7 * 86400 });
+    applied++;
+  }
+  return { connected: true, applied };
+}
+
 /* ---------- the 9pm decision ---------- */
 
 async function missingNow(env, date) {
@@ -245,7 +272,8 @@ async function missingNow(env, date) {
 async function nightlyCheck(env, force) {
   const { date, hour } = nyParts();
   if (!force && hour !== 21) return { skipped: `NY hour ${hour}` };
-  await fetchWeights(env).catch(() => {}); // freshen so a scale weigh-in never draws a false push
+  // Freshen so a scale weigh-in or tracked steps never draw a false push.
+  await Promise.all([fetchWeights(env).catch(() => {}), fetchActivity(env).catch(() => {})]);
   const missing = await missingNow(env, date);
   if (!missing.length) return { push: false, missing };
   const result = await sendPush(env, {
@@ -274,7 +302,7 @@ export default {
       const nonce = bytesToB64u(crypto.getRandomValues(new Uint8Array(16)));
       await env.KV.put('withings:nonce', nonce, { expirationTtl: 600 });
       const p = new URLSearchParams({
-        response_type: 'code', client_id: env.WITHINGS_CLIENT_ID, scope: 'user.metrics',
+        response_type: 'code', client_id: env.WITHINGS_CLIENT_ID, scope: 'user.metrics,user.activity',
         redirect_uri: `${url.origin}/withings/callback`, state: nonce,
       });
       return Response.redirect(`${WITHINGS_AUTHORIZE}?${p}`, 302);
@@ -298,8 +326,11 @@ export default {
           code, redirect_uri: `${url.origin}/withings/callback`,
         });
         await saveTokens(env, b);
-        const r = await fetchWeights(env).catch(() => null);
-        return page(`<h2 style="color:#ccff00;margin:0 0 8px">Scale connected ✓</h2><p style="color:#8a8f98">${r && r.applied ? `${r.applied} weigh-in${r.applied === 1 ? '' : 's'} pulled.` : 'Weigh-ins will sync automatically.'}<br>Close this and open NoofGains.</p>`);
+        const [r, ra] = await Promise.all([fetchWeights(env).catch(() => null), fetchActivity(env).catch(() => null)]);
+        const got = [];
+        if (r && r.applied) got.push(`${r.applied} weigh-in${r.applied === 1 ? '' : 's'}`);
+        if (ra && ra.applied) got.push(`${ra.applied} step day${ra.applied === 1 ? '' : 's'}`);
+        return page(`<h2 style="color:#ccff00;margin:0 0 8px">Scale connected ✓</h2><p style="color:#8a8f98">${got.length ? `${got.join(' + ')} pulled.` : 'Weigh-ins and steps will sync automatically.'}<br>Close this and open NoofGains.</p>`);
       } catch (e) {
         return page(`<h2 style="margin:0 0 8px">Connection failed</h2><p style="color:#8a8f98">${String(e.message)} — try again from NoofGains.</p>`);
       }
@@ -329,7 +360,7 @@ export default {
     }
 
     if (req.method === 'GET' && url.pathname === '/pull') {
-      await fetchWeights(env).catch(() => {}); // best-effort freshen; stale beats broken
+      await Promise.all([fetchWeights(env).catch(() => {}), fetchActivity(env).catch(() => {})]); // best-effort freshen; stale beats broken
       const out = {};
       const list = await env.KV.list({ prefix: 'steps:' });
       for (const k of list.keys) {

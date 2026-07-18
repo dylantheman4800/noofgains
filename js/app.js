@@ -124,6 +124,15 @@
           <div class="pill-row">${others.map((t) => `<button class="btn-ghost pressable" data-log="${t.id}">${esc(t.name)}</button>`).join('')}</div>
         </div>`;
 
+    /* blunt-coach nudge — one line, only when something is slipping */
+    const ndg = Coach.nudge();
+    const nudgeCard = ndg
+      ? `<div class="card nudge-card${ndg.go ? ' pressable' : ''}" ${ndg.go ? `data-nudge-go="${ndg.go}"` : ''}>
+          <div class="card-label">Coach</div>
+          <p>${esc(ndg.line)}</p>
+        </div>`
+      : '';
+
     /* recovery flag */
     const flagCard = flag
       ? `<div class="card flag-card">
@@ -158,22 +167,10 @@
     const gl = Plan.goal();
     const pc = gl && Plan.modeOk() ? Plan.pace() : null;
     const items = Plan.todayItems(today);
-    const yesterday = new Date(now.getTime() - 86400000);
-    const shortDate = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
     const last = Store.lastWeight();
     const startW = last ? last.weight : 165;
     const avg = Store.rolling7Avg(today);
-
-    const qRow = (field, q, dayTag) => `
-      <div class="plan-item">
-        <span class="pi-dot"></span>
-        <div class="pi-body"><div class="pi-label">${q}</div><div class="pi-sub">${dayTag}</div></div>
-        <span class="yn pi-yn">
-          <button class="pressable" data-ci="${field}" data-val="1">Yes</button>
-          <button class="pressable" data-ci="${field}" data-val="0">No</button>
-        </span>
-      </div>`;
 
     const weighOpen = morning || items.length === 1; // sole item left: open it
     const weighExpand = `
@@ -222,36 +219,6 @@
           <div class="pi-body"><div class="pi-label">Photo check-in</div><div class="pi-sub">3 shots, 60 sec, encrypted · <button class="cu-link" data-photo-skip>skip this round</button></div></div>
           <button class="btn-ghost small pressable" data-photo-start>Camera</button>
         </div>`;
-      if (it.id === 'sleep') return qRow('sleptWell', 'Sleep well last night?', `${yesterday.toLocaleDateString('en-US', { weekday: 'short' })} night · ${shortDate(yesterday)}`);
-      if (it.id === 'food') return `
-        <div class="plan-item">
-          <span class="pi-dot"></span>
-          <div class="pi-body"><div class="pi-label">Eat healthy today?</div><div class="pi-sub"><button class="cu-link" data-food-go>log the day →</button> · ${shortDate(now)}</div></div>
-          <span class="yn pi-yn">
-            <button class="pressable" data-ci="ateHealthy" data-val="1">Yes</button>
-            <button class="pressable" data-ci="ateHealthy" data-val="0">No</button>
-          </span>
-        </div>`;
-      if (it.id === 'steps') return `
-        <div class="plan-item">
-          <span class="pi-dot"></span>
-          <div class="pi-body"><div class="pi-label">~8k steps today?</div><div class="pi-sub"><button class="cu-link" data-steps-expand>enter count</button> · biggest non-gym lever</div></div>
-          <span class="yn pi-yn">
-            <button class="pressable" data-ci="hitSteps" data-val="1">Yes</button>
-            <button class="pressable" data-ci="hitSteps" data-val="0">No</button>
-          </span>
-        </div>
-        <div class="pi-expand" id="steps-expand">
-          <div class="weigh-row">
-            <div class="stepper">
-              <button class="pressable" data-sstep="-500">−</button>
-              <input class="val" id="s-val" type="text" inputmode="numeric" value="8000">
-              <button class="pressable" data-sstep="500">+</button>
-            </div>
-            <span class="unit-tag">steps</span>
-          </div>
-          <button class="btn-ghost pressable mt12" style="width:100%" id="s-save">Save count</button>
-        </div>`;
       return '';
     }).join('');
 
@@ -266,15 +233,42 @@
         </div>
       </div>`;
 
-    const paceChip = pc
-      ? `<button class="plan-pace ${pc.behindLb <= 0.05 ? 'ahead' : 'behind'} pressable" data-pace-go>${Math.abs(pc.behindLb) < 0.05 ? 'on plan' : `${Math.abs(pc.behindLb).toFixed(1)} lb ${pc.behindLb < 0 ? 'ahead' : 'behind'}`}</button>`
+    /* goal strip — the fat-loss glance: bf% trend, avg vs goal, pace */
+    const bwBf = s.bodyweight.filter((b) => b.bodyFat != null);
+    const bfLast = bwBf.length ? bwBf[bwBf.length - 1] : null;
+    let bfDelta = null;
+    if (bfLast) {
+      const cutoff = Store.todayStr(new Date(new Date(bfLast.date + 'T12:00:00').getTime() - 10 * 86400000));
+      const ref = [...bwBf].reverse().find((b) => b.date <= cutoff);
+      if (ref) bfDelta = { d: bfLast.bodyFat - ref.bodyFat, days: Math.round((new Date(bfLast.date + 'T12:00:00') - new Date(ref.date + 'T12:00:00')) / 86400000) };
+    }
+    const wNow = avg != null ? avg : (last ? last.weight : null);
+    const gsStats = [`<div class="gs-stat">
+        <div class="gs-label">Body fat</div>
+        <div class="gs-num">${bfLast ? `${bfLast.bodyFat.toFixed(1)}<span>%</span>` : '—'}</div>
+        <div class="gs-delta${bfDelta ? (bfDelta.d <= -0.05 ? ' good' : bfDelta.d >= 0.05 ? ' bad' : '') : ''}">${bfDelta ? `${bfDelta.d < -0.05 ? '▼' : bfDelta.d > 0.05 ? '▲' : '·'} ${Math.abs(bfDelta.d).toFixed(1)} pts in ${bfDelta.days}d` : bfLast ? 'no trend yet' : 'scale sends it'}</div>
+      </div>`,
+      `<div class="gs-stat">
+        <div class="gs-label">7-day avg</div>
+        <div class="gs-num">${wNow != null ? `${wNow.toFixed(1)}<span>lb</span>` : '—'}</div>
+        <div class="gs-delta">${pc ? `${pc.toGo.toFixed(1)} lb to ${pc.target.toFixed(0)}` : 'no goal set'}</div>
+      </div>`];
+    if (pc) gsStats.push(`<div class="gs-stat">
+        <div class="gs-label">Pace</div>
+        <div class="gs-num small${pc.behindLb <= 0.05 ? ' good' : ' bad'}">${Math.abs(pc.behindLb) < 0.05 ? 'On plan' : `${Math.abs(pc.behindLb).toFixed(1)} lb ${pc.behindLb < 0 ? 'ahead' : 'behind'}`}</div>
+        <div class="gs-delta">${pc.projDate ? `→ ${Plan.fmtD(pc.projDate)}` : pc.stalled ? 'trend stalled' : `plan: ${Plan.fmtD(pc.planDate)}`}</div>
+      </div>`);
+    const goalStrip = last
+      ? `<div class="card goal-strip pressable" data-strip-go>${gsStats.join('<div class="gs-div"></div>')}</div>`
       : '';
+
+    /* pace chip retired from the plan head — the goal strip above owns pace now */
     const planCard = `<div class="card">
-        <div class="plan-head"><div class="card-label" style="margin:0">Today’s plan</div>${paceChip}</div>
+        <div class="plan-head"><div class="card-label" style="margin:0">Today’s plan</div></div>
         <div class="plan-items">${rows || caughtUp}</div>
       </div>`;
 
-    $('#today-cards').innerHTML = [hero, flagCard, planCard, ring].join('');
+    $('#today-cards').innerHTML = [hero, nudgeCard, flagCard, goalStrip, planCard, ring].join('');
 
     /* wire */
     $$('#today-cards [data-log]').forEach((b) => b.addEventListener('click', () => {
@@ -289,8 +283,10 @@
     }));
     const moreBtn = $('#today-cards [data-more-types]');
     if (moreBtn) moreBtn.addEventListener('click', () => openDaySheet(today));
-    const paceGo = $('#today-cards [data-pace-go]');
-    if (paceGo) paceGo.addEventListener('click', () => { buzz(6); show('trends'); }); // the chip explains itself where the plan card lives
+    const stripGo = $('#today-cards [data-strip-go]');
+    if (stripGo) stripGo.addEventListener('click', () => { buzz(6); show('trends'); }); // full milestone story lives in Trends
+    const nudgeGo = $('#today-cards [data-nudge-go]');
+    if (nudgeGo) nudgeGo.addEventListener('click', () => { buzz(6); show(nudgeGo.dataset.nudgeGo); });
     const dismiss = $('#today-cards [data-dismiss-flag]');
     if (dismiss) dismiss.addEventListener('click', () => { Store.update((st) => { st.coach.dismissedFlagOn = today; }); render(); });
     const gsBtn = $('#today-cards [data-goal-setup]');
@@ -302,34 +298,6 @@
       $('#weigh-chev').textContent = ex.classList.contains('open') ? '−' : '›';
       buzz(6);
     });
-    $$('#today-cards [data-ci]').forEach((b) => b.addEventListener('click', () => {
-      const field = b.dataset.ci, v = b.dataset.val === '1';
-      Store.setCheckin(today, field, v);
-      if (field === 'hitSteps') Store.setCheckin(today, 'steps', null); // plain yes/no overrides any count
-      buzz(12);
-      render();
-      toast(v ? 'Yes — noted' : 'No — noted', () => Store.setCheckin(today, field, null));
-    }));
-    const sTog = $('#today-cards [data-steps-expand]');
-    if (sTog) sTog.addEventListener('click', () => { $('#steps-expand').classList.toggle('open'); buzz(6); });
-    const foodGo = $('#today-cards [data-food-go]');
-    if (foodGo) foodGo.addEventListener('click', () => { buzz(6); show('food'); });
-    const sval = $('#s-val');
-    if (sval) {
-      $$('#today-cards [data-sstep]').forEach((b) => b.addEventListener('click', () => {
-        sval.value = String(Math.max(0, (parseInt(sval.value, 10) || 8000) + parseInt(b.dataset.sstep, 10)));
-        buzz(6);
-      }));
-      $('#s-save').addEventListener('click', () => {
-        const n = parseInt(String(sval.value).replace(/[^\d]/g, ''), 10);
-        if (!isFinite(n) || n < 0 || n > 200000) { toast('That’s not a step count, Noof'); return; }
-        Store.setCheckin(today, 'steps', n);
-        Store.setCheckin(today, 'hitSteps', n >= Plan.stepsTarget);
-        buzz(14);
-        render();
-        toast(`${n.toLocaleString()} steps — ${n >= Plan.stepsTarget ? 'target hit' : 'under target'}`, () => { Store.setCheckin(today, 'steps', null); Store.setCheckin(today, 'hitSteps', null); });
-      });
-    }
     const wval = $('#w-val');
     if (wval) {
       $$('#today-cards [data-step]').forEach((b) => b.addEventListener('click', () => {
@@ -1454,11 +1422,17 @@
   show('today');
   Sync.scheduleStatePing();
   const pullSync = () => Sync.pull().then((r) => {
-    if (!r || (r.steps == null && r.weight == null)) return;
-    render();
+    if (!r || (!r.stepsDays && !r.weightDays)) return;
+    render(); // past-day backfills must repaint too — post-midnight pulls used to apply silently
     if (r.weight != null && r.steps != null) toast(`Synced: ${r.weight.toFixed(1)} lb · ${r.steps.toLocaleString()} steps`);
     else if (r.weight != null) toast(`Scale synced: ${r.weight.toFixed(1)} lb`);
-    else toast(`Steps synced from your phone: ${r.steps.toLocaleString()}`);
+    else if (r.steps != null) toast(`Steps synced from your phone: ${r.steps.toLocaleString()}`);
+    else {
+      const bits = [];
+      if (r.stepsDays) bits.push(`${r.stepsDays} day${r.stepsDays === 1 ? '' : 's'} of steps`);
+      if (r.weightDays) bits.push(`${r.weightDays} weigh-in${r.weightDays === 1 ? '' : 's'}`);
+      toast(`Caught up: ${bits.join(' + ')}`);
+    }
   }).catch(() => {});
   pullSync();
   document.addEventListener('visibilitychange', () => {

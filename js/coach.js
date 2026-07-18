@@ -40,6 +40,36 @@ const Coach = (() => {
     return null;
   }
 
+  /* ---------- blunt-coach nudge (Today header) ----------
+     One line, highest-priority slip only, pure local rules — no API spend.
+     Every rule self-clears when the behavior recovers, so the card never
+     needs a dismiss. Absence of a nudge means nothing is slipping. */
+  function nudge() {
+    const s = Store.get();
+    const today = Store.todayStr();
+    const lastLift = s.sessions
+      .filter((x) => (Store.typeById(x.typeId) || {}).kind !== 'recovery')
+      .map((x) => x.date).sort().pop();
+    if (lastLift) {
+      const gap = Math.round((new Date(today + 'T12:00:00') - new Date(lastLift + 'T12:00:00')) / dayMs);
+      if (gap >= 3) return { line: `${gap} days since your last lift. The week is slipping.` };
+    }
+    if (Plan.goal() && Plan.modeOk()) {
+      const pc = Plan.pace();
+      if (pc && pc.behindLb >= 0.8) return { line: `${pc.behindLb.toFixed(1)} lb behind the line. Tighten the next few days.`, go: 'trends' };
+    }
+    const week = [1, 2, 3, 4, 5, 6, 7].map((n) => Store.checkinOn(daysAgo(n))).filter(Boolean);
+    const offDays = week.filter((c) => c.ateHealthy === false).length;
+    if (offDays >= 3) return { line: `Ate off-plan ${offDays} of the last 7 days. The deficit doesn’t survive that.`, go: 'food' };
+    const rough = [1, 2, 3, 4, 5].map((n) => Store.checkinOn(daysAgo(n))).filter((c) => c && c.sleptWell === false).length;
+    if (rough >= 3) return { line: `${rough} rough nights in 5. Recovery is part of the plan.` };
+    const y = Store.checkinOn(daysAgo(1));
+    if (y && isFinite(y.steps) && y.steps > 0 && y.steps < Plan.stepsTarget) {
+      return { line: `${(Plan.stepsTarget - y.steps).toLocaleString()} steps short yesterday. Walk it off today.` };
+    }
+    return null;
+  }
+
   /* ---------- local insight cards ---------- */
 
   function localInsights() {
@@ -377,5 +407,5 @@ const Coach = (() => {
     return text;
   }
 
-  return { localInsights, recoveryFlag, analyze, analyzePhotos, chat, chatThread, clearChat, costOf, trackSpend };
+  return { localInsights, recoveryFlag, nudge, analyze, analyzePhotos, chat, chatThread, clearChat, costOf, trackSpend };
 })();
