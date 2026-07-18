@@ -278,7 +278,7 @@
         ${stepsN != null ? `<div class="tl-track"><div class="tl-fill${stepsN >= Plan.stepsTarget ? ' hit' : ''}" style="width:${Math.round(stepsFrac * 100)}%"></div></div>` : ''}
         <div class="tl-row pressable" data-fuel-go>
           <span class="tl-k">Fuel</span>
-          <span class="tl-v">~${fp.targets.kcal.toLocaleString()} kcal · ${fp.targets.protein}g P <span class="tl-sub">· ${esc(fp.kindLabel)} ›</span></span>
+          <span class="tl-v">~${fp.targets.kcal.toLocaleString()} kcal · ${fp.targets.protein}g P <span class="tl-sub">· ${esc(fp.shape.label)} ›</span></span>
         </div>
       </div>`;
 
@@ -368,11 +368,13 @@
     const dow = new Date().toLocaleDateString('en-US', { weekday: 'short' });
 
     $('#fuel-daytag').innerHTML = `<b>${t.kcal.toLocaleString()}</b> kcal · ${t.protein}g P`;
-    $('#fuel-sub').textContent = `${dow} — ${plan.kindLabel} · ${t.mode === 'cut' ? 'Cut' : 'Bulk'} targets from your ${t.weightUsed} lb average`;
+    $('#fuel-sub').textContent = `${dow} — ${plan.shape.label} · ${plan.kindLabel} · ${t.mode === 'cut' ? 'Cut' : 'Bulk'} targets from ${t.weightUsed} lb${t.bfUsed != null ? ` / ${t.bfUsed.toFixed(1)}%` : ''}`;
 
     const totals = plan.totals;
     const pct = (v, target) => Math.min((v / target) * 100, 100);
-    const slotBtn = (v, label) => `<button class="pressable ${plan.slot === v ? 'active' : ''}" data-slot="${v}">${label}</button>`;
+    const shapeChips = Object.entries(Fuel.SHAPES)
+      .map(([id, sh]) => `<button class="shape-chip pressable ${plan.shapeId === id ? 'active' : ''}" data-shape="${id}">${sh.chip}</button>`)
+      .join('');
 
     const meals = plan.meals.map((m) => `
       <div class="meal">
@@ -390,9 +392,7 @@
     const tPlan = Fuel.plan(tomorrow);
 
     $('#fuel-body').innerHTML = `
-      <div class="slot-choice">
-        ${slotBtn('am', '7am lift')}${slotBtn('pm', '7pm lift')}${slotBtn('off', 'Rest day')}
-      </div>
+      <div class="shape-strip" aria-label="Today’s training shape">${shapeChips}</div>
       <div class="card">
         <div class="card-label">Planned menu vs today's targets</div>
         <div class="macro-bar">
@@ -412,11 +412,11 @@
         <p class="tiny mt8">Chain-order macros are honest estimates from published nutrition info.</p>
       </div>
       <div class="card">
-        <div class="card-label">Tomorrow — ${tPlan.kindLabel}</div>
+        <div class="card-label">Tomorrow — ${tPlan.shape.label} · ${tPlan.kindLabel}</div>
         <p class="muted">${esc(tPlan.meals.map((m) => m.name).join(' · '))}</p>
       </div>`;
 
-    $$('#fuel-body [data-slot]').forEach((b) => b.addEventListener('click', () => { Fuel.setSlotChoice(today, b.dataset.slot); buzz(8); render(); }));
+    $$('#fuel-body [data-shape]').forEach((b) => b.addEventListener('click', () => { Fuel.setShape(today, b.dataset.shape); buzz(8); render(); }));
     $$('#fuel-body [data-swap]').forEach((b) => b.addEventListener('click', () => { Fuel.swap(today, b.dataset.swap); buzz(8); render(); }));
   };
 

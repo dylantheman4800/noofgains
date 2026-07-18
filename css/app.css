@@ -567,12 +567,21 @@ input::placeholder { color: var(--ink-3); }
 .macro-nums { display: flex; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .macro-nums b { color: var(--ink); font-weight: 600; }
 
-.slot-choice { display: flex; gap: 8px; margin-bottom: 14px; }
-.slot-choice button {
-  flex: 1; min-height: 38px; border-radius: 10px; font-size: 13px; font-weight: 500;
+/* day-shape picker — scrollable chip strip, edge-faded like the milestone strip */
+.shape-strip {
+  display: flex; gap: 8px; margin-bottom: 14px;
+  overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  padding: 2px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
+.shape-strip::-webkit-scrollbar { display: none; }
+.shape-chip {
+  flex: 0 0 auto; min-height: 38px; padding: 0 14px;
+  border-radius: 10px; font-size: 13px; font-weight: 500; white-space: nowrap;
   background: var(--s2); border: 1px solid var(--hairline); color: var(--ink-2);
 }
-.slot-choice button.active { color: var(--volt); border-color: rgba(204,255,0,0.4); background: var(--volt-dim); }
+.shape-chip.active { color: var(--volt); border-color: rgba(204,255,0,0.4); background: var(--volt-dim); }
 
 .meal { display: flex; gap: 12px; padding: 14px 0; border-top: 1px solid var(--hairline); }
 .meal:first-child { border-top: none; }

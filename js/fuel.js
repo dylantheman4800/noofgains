@@ -17,21 +17,58 @@ const Fuel = (() => {
     return a;
   }
 
-  /* Mifflin-St Jeor from 7-day avg weight (falls back to last entry). */
+  /* ---------- day shapes ----------
+     Dylan's real training days (July 2026): runs and lifts, morning and
+     night, sometimes both. No stable weekly pattern — every day defaults
+     to Rest and he picks the shape on the Fuel tab. The shape drives the
+     activity multiplier AND the meal timeline; protein and fat stay pinned
+     to bodyweight, so all day-to-day variation lands in carbs — carb
+     cycling around the work, not a separate diet to manage. */
+  const SHAPES = {
+    rest:        { label: 'Rest day',         chip: 'Rest',           mult: 1.375, am: null,      pm: null },
+    amLift:      { label: 'Morning lift',     chip: 'AM lift',        mult: 1.5,   am: 'lift',    pm: null },
+    pmLift:      { label: 'Night lift',       chip: 'PM lift',        mult: 1.5,   am: null,      pm: 'lift' },
+    amRun:       { label: 'Short morning run', chip: 'AM run',        mult: 1.5,   am: 'run',     pm: null },
+    pmRun:       { label: 'Short night run',  chip: 'PM run',         mult: 1.5,   am: null,      pm: 'run' },
+    longRun:     { label: 'Long run (60–90m)', chip: 'Long run',      mult: 1.65,  am: 'longRun', pm: null },
+    amRunPmLift: { label: 'AM run + PM lift', chip: 'Run + lift',     mult: 1.6,   am: 'run',     pm: 'lift' },
+    amLiftPmRun: { label: 'AM lift + PM run', chip: 'Lift + run',     mult: 1.6,   am: 'lift',    pm: 'run' },
+  };
+  const LEGACY_SLOTS = { am: 'amLift', pm: 'pmLift', off: 'rest' };
+
+  function shapeOf(date) {
+    const stored = (Store.get().fuel.slotChoice || {})[date];
+    return SHAPES[stored] ? stored : (LEGACY_SLOTS[stored] || 'rest');
+  }
+
+  function setShape(date, id) {
+    Store.update((s) => { s.fuel.slotChoice[date] = id; });
+  }
+
+  /* Targets auto-calc from the day's shape + body comp + the goal:
+     Katch-McArdle BMR when the scale has sent a fat% (lean mass is the
+     honest engine), Mifflin-St Jeor fallback; TDEE from the shape's
+     multiplier; the deficit/surplus comes from the plan's prescribed
+     weekly rate (cut −0.6%/wk etc.), not a hardcoded 500. */
   function targets(date = Store.todayStr()) {
     const p = Store.get().settings.profile;
     const last = Store.lastWeight();
     const lb = Store.rolling7Avg(date) || (last ? last.weight : 165);
     const kg = lb * 0.4536;
-    const cm = p.heightIn * 2.54;
-    const bmr = 10 * kg + 6.25 * cm - 5 * age(p.birthdate, date) + 5; // male
-    const tdee = bmr * 1.5; // office job + ~5 sessions/wk
+    const bf = typeof Plan !== 'undefined' ? Plan.latestBf() : null;
+    const bmr = bf != null
+      ? 370 + 21.6 * (kg * (1 - bf / 100))                                  // Katch-McArdle
+      : 10 * kg + 6.25 * (p.heightIn * 2.54) - 5 * age(p.birthdate, date) + 5; // Mifflin, male
+    const shape = SHAPES[shapeOf(date)];
+    const tdee = bmr * shape.mult;
     const mode = Store.currentMode(date);
-    let kcal = mode === 'cut' ? Math.max(tdee - 500, 1900) : tdee + 300;
+    const hasGoal = typeof Plan !== 'undefined' && Plan.goal();
+    const dailyDelta = hasGoal ? (Plan.weeklyRateLb() * 3500) / 7 : (mode === 'cut' ? 500 : 300);
+    let kcal = mode === 'cut' ? Math.max(tdee - dailyDelta, 1900) : tdee + dailyDelta;
     // Plan engine's weekly calibration nudges calories ±100 at a time when
     // the work was done but the line was missed. Hard caps always win:
     // cut stays ≥1,900 and keeps a real deficit; bulk never dips below TDEE.
-    if (typeof Plan !== 'undefined' && Plan.goal()) {
+    if (hasGoal) {
       kcal += Plan.kcalAdjustment(date);
       if (mode === 'cut') kcal = Math.min(Math.max(kcal, 1900), Math.max(tdee - 300, 1900));
       else kcal = Math.max(kcal, tdee);
@@ -40,7 +77,7 @@ const Fuel = (() => {
     const protein = Math.round(lb);            // 1 g/lb
     const fat = Math.round(lb * (mode === 'cut' ? 0.36 : 0.42));
     const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
-    return { kcal, protein, fat, carbs, mode, weightUsed: Math.round(lb * 10) / 10, tdee: Math.round(tdee) };
+    return { kcal, protein, fat, carbs, mode, weightUsed: Math.round(lb * 10) / 10, tdee: Math.round(tdee), bfUsed: bf };
   }
 
   /* ---------- meal library ----------
@@ -100,6 +137,17 @@ const Fuel = (() => {
       { food: 'Banana + black coffee', m: [110, 1, 0, 27], mode: 'both' },
       { food: '2 rice cakes + honey', m: [150, 1, 0, 35], mode: 'both' },
     ],
+    preShortRun: [
+      { food: 'Black coffee + water — a short easy run goes fine fasted', m: [0, 0, 0, 0], mode: 'both' },
+      { food: 'Half a banana if the legs feel flat', m: [55, 0, 0, 14], mode: 'both' },
+    ],
+    preLongRun: [
+      { food: 'Toast + honey + a banana, ~1h before', m: [280, 5, 2, 64], mode: 'both' },
+      { food: '2 rice cakes + honey + half a banana', m: [210, 2, 0, 50], mode: 'both' },
+    ],
+    midRun: [
+      { food: 'Gel or chews, back half of the run', m: [100, 0, 0, 24], mode: 'both' },
+    ],
     postGym: [
       { food: 'Whey shake (water)', m: [130, 25, 2, 3], mode: 'both' },
     ],
@@ -133,18 +181,6 @@ const Fuel = (() => {
     return pool[idx];
   }
 
-  /* Workout slot for the day: 'am' | 'pm' | 'off'. */
-  function slotChoice(date) {
-    const stored = (Store.get().fuel.slotChoice || {})[date];
-    if (stored) return stored;
-    const dow = new Date(date + 'T12:00:00').getDay();
-    return dow === 0 || dow === 6 ? 'off' : 'pm';
-  }
-
-  function setSlotChoice(date, v) {
-    Store.update((s) => { s.fuel.slotChoice[date] = v; });
-  }
-
   function swap(date, slotId) {
     Store.update((s) => {
       const k = date + '|' + slotId;
@@ -152,42 +188,55 @@ const Fuel = (() => {
     });
   }
 
-  /* Build the day's timeline. */
+  /* Build the day's timeline around the shape's AM/PM segments. */
   function plan(date = Store.todayStr()) {
     const t = targets(date);
     const dow = new Date(date + 'T12:00:00').getDay();
     const kind = DAY_KINDS[dow];
-    const slot = slotChoice(date);
+    const shapeId = shapeOf(date);
+    const shape = SHAPES[shapeId];
     const weekend = dow === 0 || dow === 6;
     const meals = [];
 
-    if (slot === 'am') meals.push({ time: '6:40a', slotId: 'pre', name: 'Pre-lift', ...pick(LIB.preGym, date, 'pre', t.mode), locked: false });
+    if (shape.am === 'lift') meals.push({ time: '6:40a', slotId: 'pre', name: 'Pre-lift', ...pick(LIB.preGym, date, 'pre', t.mode) });
+    if (shape.am === 'run') meals.push({ time: '6:45a', slotId: 'pre', name: 'Pre-run', ...pick(LIB.preShortRun, date, 'pre', t.mode) });
+    if (shape.am === 'longRun') {
+      meals.push({ time: weekend ? '8:00a' : '5:45a', slotId: 'pre', name: 'Pre-run', ...pick(LIB.preLongRun, date, 'pre', t.mode) });
+      meals.push({ time: 'mid-run', slotId: 'midrun', name: 'Mid-run fuel', ...pick(LIB.midRun, date, 'midrun', t.mode) });
+    }
 
+    const AM_NOTES = {
+      lift: 'Post-lift — add a whey shake (+130 cal / 25g P).',
+      run: 'Post-run — protein first; add a whey shake (+130 cal / 25g P).',
+      longRun: 'Recovery breakfast — whey shake plus the carbs stay on the plate today.',
+    };
     const bfast = pick(LIB.officeBreakfast, date, 'bfast', t.mode);
     meals.push({
-      time: weekend ? '9:30a' : '8:30a',
+      time: weekend ? (shape.am === 'longRun' ? '10:00a' : '9:30a') : '8:30a',
       slotId: 'bfast',
       name: weekend ? 'Breakfast' : 'Office breakfast',
       ...bfast,
-      note: slot === 'am' ? 'Post-lift — add a whey shake (+130 cal / 25g P).' : bfast.note,
-      extraM: slot === 'am' ? [130, 25, 2, 3] : null,
+      note: shape.am ? AM_NOTES[shape.am] : bfast.note,
+      extraM: shape.am ? [130, 25, 2, 3] : null,
     });
 
     meals.push({ time: weekend ? '1:00p' : '12:30p', slotId: 'lunch', name: 'Lunch', ...pick(LIB[kind.lunch], date, 'lunch', t.mode) });
 
-    if (slot === 'pm') {
+    if (shape.pm === 'lift') {
       meals.push({ time: '4:30p', slotId: 'pregym', name: 'Pre-gym snack', ...pick(LIB.snack, date, 'pregym', t.mode) });
+    } else if (shape.pm === 'run') {
+      meals.push({ time: '4:45p', slotId: 'pregym', name: 'Pre-run bite', ...pick(LIB.preGym, date, 'pregym', t.mode), note: '~90 min before you head out.' });
     } else {
       meals.push({ time: '3:30p', slotId: 'snack', name: 'Snack', ...pick(LIB.snack, date, 'snack', t.mode) });
     }
 
     const dinner = pick(LIB[kind.dinner], date, 'dinner', t.mode);
     meals.push({
-      time: slot === 'pm' ? '8:30p' : '7:30p',
+      time: shape.pm ? '8:30p' : '7:30p',
       slotId: 'dinner',
-      name: slot === 'pm' ? 'Post-lift dinner' : 'Dinner',
+      name: shape.pm === 'lift' ? 'Post-lift dinner' : shape.pm === 'run' ? 'Post-run dinner' : 'Dinner',
       ...dinner,
-      note: slot === 'pm' ? 'Post-workout — don’t skimp the carbs here.' : dinner.note,
+      note: shape.pm ? 'Post-workout — don’t skimp the carbs here.' : dinner.note,
     });
 
     // Top-up loop: fill protein and calorie gaps with snacks until the day
@@ -205,7 +254,8 @@ const Fuel = (() => {
     }
 
     return {
-      date, targets: t, slot, weekend,
+      date, targets: t, weekend,
+      shapeId, shape: { id: shapeId, label: shape.label },
       kindLabel: weekend ? 'Weekend' : kind.label,
       meals,
       totals: { kcal: totals[0], protein: totals[1], fat: totals[2], carbs: totals[3] },
@@ -220,5 +270,5 @@ const Fuel = (() => {
     }, [0, 0, 0, 0]);
   }
 
-  return { targets, plan, swap, slotChoice, setSlotChoice };
+  return { targets, plan, swap, shapeOf, setShape, SHAPES };
 })();
